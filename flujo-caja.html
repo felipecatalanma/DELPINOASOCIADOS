@@ -134,6 +134,15 @@
       </form>
     </div>
 
+    <div class="section-title">Actualizar saldos</div>
+    <div class="form-box">
+      <div class="msg" id="saldosMsg"></div>
+      <div style="margin-bottom:14px; max-width:200px;"><label>Fecha</label><input type="date" id="saldosFecha"></div>
+      <table class="simple" id="tablaSaldosRapida" style="margin-bottom:14px;"></table>
+      <button type="button" class="btn" id="guardarSaldosBtn">Guardar saldos de esta fecha</button>
+    </div>
+
+    <div class="section-title">Cuentas e historial</div>
     <div id="bancosContainer"></div>
   </div>
 
@@ -388,49 +397,72 @@
   };
 
   // ---------- BANCOS ----------
+  let bancosCache = [];
+
   async function cargarBancos() {
     const { data: bancos } = await sb.from('bancos').select('*').eq('empresa_id', empresaId).order('nombre');
+    bancosCache = bancos || [];
 
-    let html = '';
-    for (const b of (bancos || [])) {
-      const { data: saldos } = await sb.from('saldos_bancarios').select('*').eq('banco_id', b.id).order('fecha', { ascending: false }).limit(5);
-      const saldoActual = saldos && saldos.length ? saldos[0].saldo : null;
+    if (!document.getElementById('saldosFecha').value) {
+      document.getElementById('saldosFecha').value = new Date().toISOString().slice(0, 10);
+    }
 
-      html += `
+    // Tabla rápida: un input de saldo por banco
+    let filaHtml = '<thead><tr><th>Cuenta</th><th>Saldo actual</th><th>Nuevo saldo</th></tr></thead><tbody>';
+    for (const b of bancosCache) {
+      const { data: ultimo } = await sb.from('saldos_bancarios').select('saldo, fecha').eq('banco_id', b.id).order('fecha', { ascending: false }).limit(1);
+      const saldoActual = ultimo && ultimo.length ? `${fmt(ultimo[0].saldo)} (${ultimo[0].fecha})` : 'Sin registros';
+      filaHtml += `
+        <tr>
+          <td>${b.nombre}</td>
+          <td>${saldoActual}</td>
+          <td><input type="number" step="1" class="saldoRapidoInput" data-banco="${b.id}" placeholder="Ingresar monto"></td>
+        </tr>`;
+    }
+    filaHtml += '</tbody>';
+    document.getElementById('tablaSaldosRapida').innerHTML = bancosCache.length ? filaHtml : '';
+
+    if (!bancosCache.length) {
+      document.getElementById('tablaSaldosRapida').innerHTML = '';
+      document.getElementById('guardarSaldosBtn').style.display = 'none';
+    } else {
+      document.getElementById('guardarSaldosBtn').style.display = 'inline-block';
+    }
+
+    // Historial (solo lectura) por cuenta
+    let historialHtml = '';
+    for (const b of bancosCache) {
+      const { data: saldos } = await sb.from('saldos_bancarios').select('*').eq('banco_id', b.id).order('fecha', { ascending: false }).limit(10);
+      historialHtml += `
       <div class="form-box">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-          <div>
-            <strong>${b.nombre}</strong>
-            <div style="font-size:12px; color:#7a8a7a;">Saldo actual: ${saldoActual != null ? fmt(saldoActual) : 'Sin registros'}</div>
-          </div>
+          <strong>${b.nombre}</strong>
           <button class="btn small danger" onclick="borrarBanco('${b.id}')">Eliminar cuenta</button>
         </div>
-        <form class="saldoForm" data-banco="${b.id}" style="display:flex; gap:10px; align-items:end; margin-bottom:12px; flex-wrap:wrap;">
-          <div><label>Fecha</label><input type="date" class="saldoFecha" value="${new Date().toISOString().slice(0,10)}"></div>
-          <div><label>Saldo</label><input type="number" step="1" class="saldoMonto" required></div>
-          <button type="submit" class="btn small">Registrar saldo</button>
-        </form>
         <table class="simple">
           <thead><tr><th>Fecha</th><th>Saldo</th></tr></thead>
           <tbody>${(saldos || []).map(s => `<tr><td>${s.fecha}</td><td>${fmt(s.saldo)}</td></tr>`).join('') || '<tr><td colspan="2">Sin registros</td></tr>'}</tbody>
         </table>
       </div>`;
     }
-    document.getElementById('bancosContainer').innerHTML = html || '<p style="font-size:13px; color:#7a8a7a;">Aún no registras cuentas bancarias.</p>';
-
-    document.querySelectorAll('.saldoForm').forEach(form => {
-      form.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const bancoId = form.dataset.banco;
-        const fecha = form.querySelector('.saldoFecha').value;
-        const monto = form.querySelector('.saldoMonto').value;
-        const { error } = await sb.from('saldos_bancarios').upsert({ banco_id: bancoId, fecha, saldo: monto }, { onConflict: 'banco_id,fecha' });
-        if (error) return alert('Error: ' + error.message);
-        cargarBancos();
-        cargarCalendario();
-      });
-    });
+    document.getElementById('bancosContainer').innerHTML = historialHtml || '<p style="font-size:13px; color:#7a8a7a;">Aún no registras cuentas bancarias.</p>';
   }
+
+  document.getElementById('guardarSaldosBtn').addEventListener('click', async () => {
+    const fecha = document.getElementById('saldosFecha').value;
+    if (!fecha) return showMsg('saldosMsg', 'Selecciona una fecha.', false);
+
+    const inputs = [...document.querySelectorAll('.saldoRapidoInput')].filter(i => i.value !== '');
+    if (inputs.length === 0) return showMsg('saldosMsg', 'Ingresa al menos un saldo.', false);
+
+    const filas = inputs.map(i => ({ banco_id: i.dataset.banco, fecha, saldo: i.value }));
+    const { error } = await sb.from('saldos_bancarios').upsert(filas, { onConflict: 'banco_id,fecha' });
+    if (error) return showMsg('saldosMsg', 'Error: ' + error.message, false);
+
+    showMsg('saldosMsg', `${filas.length} saldo(s) guardado(s) para el ${fecha}.`, true);
+    cargarBancos();
+    cargarCalendario();
+  });
 
   document.getElementById('bancoForm').addEventListener('submit', async (e) => {
     e.preventDefault();
