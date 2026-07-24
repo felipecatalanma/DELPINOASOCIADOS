@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sistema Agrícola — Facturas</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #f4f6f4;
+    min-height: 100vh;
+    color: #2d3b2d;
+  }
+  header {
+    background: #fff;
+    border-bottom: 1px solid #e2e8e2;
+    padding: 14px 28px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  header .left { display: flex; align-items: center; gap: 18px; }
+  header a.back { font-size: 13px; color: #4a7c4a; text-decoration: none; }
+  header a.back:hover { text-decoration: underline; }
+  header h1 { font-size: 16px; }
+  header .empresa-badge {
+    font-size: 12px; background: #eaf2ea; color: #3d6b3d;
+    padding: 4px 10px; border-radius: 12px; font-weight: 600;
+  }
+  header .user-info { display: flex; align-items: center; gap: 14px; font-size: 13px; color: #667066; }
+  header button { background: none; border: 1px solid #d8ded8; padding: 6px 12px; border-radius: 6px; font-size: 12px; color: #445044; cursor: pointer; }
+  header button:hover { background: #f0f4f0; }
+
+  .container { max-width: 1100px; margin: 0 auto; padding: 24px; }
+
+  .tabs { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 1px solid #e2e8e2; }
+  .tab { padding: 10px 16px; font-size: 13px; font-weight: 600; color: #7a8a7a; cursor: pointer; border-bottom: 2px solid transparent; }
+  .tab.active { color: #3d6b3d; border-bottom-color: #3d6b3d; }
+
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 24px; }
+  .card { background: white; border: 1px solid #e2e8e2; border-radius: 10px; padding: 16px; }
+  .card .label { font-size: 12px; color: #7a8a7a; margin-bottom: 6px; }
+  .card .value { font-size: 20px; font-weight: 700; }
+  .card.warn .value { color: #b3261e; }
+
+  .section-title { font-size: 14px; font-weight: 700; margin: 20px 0 10px; color: #445044; }
+
+  table { width: 100%; border-collapse: collapse; background: white; border-radius: 10px; overflow: hidden; border: 1px solid #e2e8e2; margin-bottom: 20px; }
+  th, td { text-align: left; padding: 9px 12px; font-size: 13px; border-bottom: 1px solid #eef2ee; }
+  th { background: #f8faf8; color: #667066; font-weight: 600; }
+  tr:last-child td { border-bottom: none; }
+
+  .badge { padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+  .badge.pendiente { background: #fdf3e0; color: #a56b00; }
+  .badge.parcial { background: #e3edfb; color: #1d5bb3; }
+  .badge.pagada { background: #e6f4e6; color: #2e7d32; }
+
+  .form-box { background: white; border: 1px solid #e2e8e2; border-radius: 10px; padding: 18px; margin-bottom: 20px; }
+  .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 12px; }
+  label { display: block; font-size: 12px; font-weight: 600; color: #445044; margin-bottom: 4px; }
+  input, select, textarea { width: 100%; padding: 8px 10px; border: 1px solid #d8ded8; border-radius: 6px; font-size: 13px; }
+  textarea { resize: vertical; min-height: 50px; }
+  .btn { background: #3d6b3d; color: white; border: none; padding: 9px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .btn:hover { background: #345c34; }
+  .btn.small { padding: 5px 10px; font-size: 12px; }
+  .btn.secondary { background: white; border: 1px solid #d8ded8; color: #445044; }
+  .btn.secondary:hover { background: #f0f4f0; }
+  .btn.danger { background: #fdecea; color: #b3261e; border: 1px solid #f4c7c2; }
+
+  .row-actions { display: flex; gap: 6px; }
+  .expand-row td { background: #f8faf8; }
+  .msg { font-size: 12px; padding: 8px 12px; border-radius: 6px; margin-bottom: 12px; display: none; }
+  .msg.ok { background: #e6f4e6; color: #2e7d32; display: block; }
+  .msg.err { background: #fdecea; color: #b3261e; display: block; }
+
+  .loading { text-align: center; padding: 60px; color: #7a8a7a; font-size: 14px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="left">
+    <a class="back" href="dashboard.html">&larr; Dashboard</a>
+    <h1>Facturas</h1>
+    <span class="empresa-badge" id="empresaBadge">...</span>
+  </div>
+  <div class="user-info">
+    <span id="userEmail"></span>
+    <button id="logoutBtn">Cerrar sesión</button>
+  </div>
+</header>
+
+<div class="container" id="mainContent" style="display:none;">
+
+  <div class="tabs">
+    <div class="tab active" data-panel="resumen">Resumen</div>
+    <div class="tab" data-panel="facturas">Facturas</div>
+    <div class="tab" data-panel="proveedores">Proveedores</div>
+    <div class="tab" data-panel="categorias">Categorías</div>
+  </div>
+
+  <!-- RESUMEN -->
+  <div class="panel active" id="panel-resumen">
+    <div class="cards">
+      <div class="card warn"><div class="label">Pendiente por pagar</div><div class="value" id="cardPendiente">$0</div></div>
+      <div class="card warn"><div class="label">Facturas vencidas</div><div class="value" id="cardVencidas">0</div></div>
+      <div class="card"><div class="label">Pagado este mes</div><div class="value" id="cardPagadoMes">$0</div></div>
+      <div class="card"><div class="label">Facturas activas</div><div class="value" id="cardTotalFacturas">0</div></div>
+    </div>
+
+    <div class="section-title">Egresos del mes actual por categoría</div>
+    <table>
+      <thead><tr><th>Categoría</th><th>Total pagado</th></tr></thead>
+      <tbody id="tablaPorCategoria"></tbody>
+    </table>
+
+    <div class="section-title">Egresos del mes actual por proveedor</div>
+    <table>
+      <thead><tr><th>Proveedor</th><th>Total pagado</th></tr></thead>
+      <tbody id="tablaPorProveedor"></tbody>
+    </table>
+  </div>
+
+  <!-- FACTURAS -->
+  <div class="panel" id="panel-facturas">
+    <div class="form-box">
+      <div class="section-title" style="margin-top:0;">Nueva factura</div>
+      <div class="msg" id="facturaMsg"></div>
+      <form id="facturaForm">
+        <div class="form-grid">
+          <div><label>Proveedor</label><select id="fProveedor" required></select></div>
+          <div><label>Categoría</label><select id="fCategoria" required></select></div>
+          <div><label>Folio</label><input type="text" id="fFolio"></div>
+          <div><label>Fecha emisión</label><input type="date" id="fFechaEmision"></div>
+          <div><label>Fecha vencimiento</label><input type="date" id="fFechaVenc"></div>
+          <div><label>Monto neto</label><input type="number" step="1" id="fMontoNeto"></div>
+          <div><label>IVA</label><input type="number" step="1" id="fIva"></div>
+          <div><label>Monto total *</label><input type="number" step="1" id="fMontoTotal" required></div>
+        </div>
+        <div style="margin-bottom:12px;"><label>Observaciones</label><textarea id="fObs"></textarea></div>
+        <button type="submit" class="btn">Guardar factura</button>
+      </form>
+    </div>
+
+    <div class="section-title">Listado de facturas</div>
+    <table>
+      <thead>
+        <tr><th>Folio</th><th>Proveedor</th><th>Categoría</th><th>Vencimiento</th><th>Total</th><th>Saldo</th><th>Estado</th><th></th></tr>
+      </thead>
+      <tbody id="tablaFacturas"></tbody>
+    </table>
+  </div>
+
+  <!-- PROVEEDORES -->
+  <div class="panel" id="panel-proveedores">
+    <div class="form-box">
+      <div class="section-title" style="margin-top:0;">Nuevo proveedor</div>
+      <div class="msg" id="provMsg"></div>
+      <form id="provForm">
+        <div class="form-grid">
+          <div><label>RUT</label><input type="text" id="pRut"></div>
+          <div><label>Razón social *</label><input type="text" id="pRazon" required></div>
+          <div><label>Giro</label><input type="text" id="pGiro"></div>
+        </div>
+        <button type="submit" class="btn">Guardar proveedor</button>
+      </form>
+    </div>
+    <table>
+      <thead><tr><th>RUT</th><th>Razón social</th><th>Giro</th><th></th></tr></thead>
+      <tbody id="tablaProveedores"></tbody>
+    </table>
+  </div>
+
+  <!-- CATEGORIAS -->
+  <div class="panel" id="panel-categorias">
+    <div class="form-box">
+      <div class="section-title" style="margin-top:0;">Nueva categoría</div>
+      <div class="msg" id="catMsg"></div>
+      <form id="catForm">
+        <div class="form-grid">
+          <div><label>Nombre *</label><input type="text" id="cNombre" required placeholder="Ej: Insumos agrícolas"></div>
+          <div><label>Tipo</label>
+            <select id="cTipo">
+              <option value="operacional">Operacional</option>
+              <option value="administrativo">Administrativo</option>
+              <option value="capex">Capex</option>
+            </select>
+          </div>
+        </div>
+        <button type="submit" class="btn">Guardar categoría</button>
+      </form>
+    </div>
+    <table>
+      <thead><tr><th>Nombre</th><th>Tipo</th><th></th></tr></thead>
+      <tbody id="tablaCategorias"></tbody>
+    </table>
+  </div>
+
+</div>
+
+<div class="loading" id="loadingMsg">Cargando...</div>
+
+<script>
+  const SUPABASE_URL = 'https://fnnbslztdlumkwrxgmns.supabase.co';
+  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZubmJzbHp0ZGx1bWt3cnhnbW5zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ4NDYxNjYsImV4cCI6MjEwMDQyMjE2Nn0.HOSw8d5PAf55yYa4dR-V2LXjfcLKaF92357DAkgayrc';
+  const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  let empresaId = null;
+  let proveedores = [];
+  let categorias = [];
+
+  const loadingMsg = document.getElementById('loadingMsg');
+  const mainContent = document.getElementById('mainContent');
+  const fmt = (n) => '$' + Number(n || 0).toLocaleString('es-CL');
+
+  function showMsg(elId, text, ok) {
+    const el = document.getElementById(elId);
+    el.textContent = text;
+    el.className = 'msg ' + (ok ? 'ok' : 'err');
+    setTimeout(() => { el.className = 'msg'; }, 4000);
+  }
+
+  async function init() {
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) { window.location.href = 'login.html'; return; }
+    document.getElementById('userEmail').textContent = session.user.email;
+
+    empresaId = localStorage.getItem('empresa_activa_id');
+    if (!empresaId) { window.location.href = 'dashboard.html'; return; }
+
+    const { data: empresa } = await sb.from('empresas').select('razon_social, nombre_fantasia').eq('id', empresaId).single();
+    if (empresa) document.getElementById('empresaBadge').textContent = empresa.nombre_fantasia || empresa.razon_social;
+
+    await Promise.all([cargarProveedores(), cargarCategorias()]);
+    await cargarFacturas();
+    await cargarResumen();
+
+    loadingMsg.style.display = 'none';
+    mainContent.style.display = 'block';
+  }
+
+  document.getElementById('logoutBtn').addEventListener('click', async () => {
+    await sb.auth.signOut();
+    window.location.href = 'login.html';
+  });
+
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById('panel-' + tab.dataset.panel).classList.add('active');
+    });
+  });
+
+  // ---------- PROVEEDORES ----------
+  async function cargarProveedores() {
+    const { data } = await sb.from('proveedores').select('*').eq('empresa_id', empresaId).order('razon_social');
+    proveedores = data || [];
+    document.getElementById('tablaProveedores').innerHTML = proveedores.map(p => `
+      <tr>
+        <td>${p.rut || ''}</td><td>${p.razon_social}</td><td>${p.giro || ''}</td>
+        <td><button class="btn small danger" onclick="borrarProveedor('${p.id}')">Eliminar</button></td>
+      </tr>`).join('') || '<tr><td colspan="4">Sin proveedores aún</td></tr>';
+    document.getElementById('fProveedor').innerHTML = '<option value="">-- Selecciona --</option>' +
+      proveedores.map(p => `<option value="${p.id}">${p.razon_social}</option>`).join('');
+  }
+
+  document.getElementById('provForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const { error } = await sb.from('proveedores').insert({
+      empresa_id: empresaId,
+      rut: document.getElementById('pRut').value,
+      razon_social: document.getElementById('pRazon').value,
+      giro: document.getElementById('pGiro').value
+    });
+    if (error) return showMsg('provMsg', 'Error: ' + error.message, false);
+    showMsg('provMsg', 'Proveedor guardado.', true);
+    e.target.reset();
+    cargarProveedores();
+  });
+
+  window.borrarProveedor = async (id) => {
+    if (!confirm('¿Eliminar este proveedor?')) return;
+    const { error } = await sb.from('proveedores').delete().eq('id', id);
+    if (error) return alert('No se pudo eliminar: ' + error.message);
+    cargarProveedores();
+  };
+
+  // ---------- CATEGORIAS ----------
+  async function cargarCategorias() {
+    const { data } = await sb.from('categorias_egreso').select('*').eq('empresa_id', empresaId).order('nombre');
+    categorias = data || [];
+    document.getElementById('tablaCategorias').innerHTML = categorias.map(c => `
+      <tr>
+        <td>${c.nombre}</td><td>${c.tipo || ''}</td>
+        <td><button class="btn small danger" onclick="borrarCategoria('${c.id}')">Eliminar</button></td>
+      </tr>`).join('') || '<tr><td colspan="3">Sin categorías aún</td></tr>';
+    document.getElementById('fCategoria').innerHTML = '<option value="">-- Selecciona --</option>' +
+      categorias.map(c => `<option value="${c.id}">${c.nombre}</option>`).join('');
+  }
+
+  document.getElementById('catForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const { error } = await sb.from('categorias_egreso').insert({
+      empresa_id: empresaId,
+      nombre: document.getElementById('cNombre').value,
+      tipo: document.getElementById('cTipo').value
+    });
+    if (error) return showMsg('catMsg', 'Error: ' + error.message, false);
+    showMsg('catMsg', 'Categoría guardada.', true);
+    e.target.reset();
+    cargarCategorias();
+  });
+
+  window.borrarCategoria = async (id) => {
+    if (!confirm('¿Eliminar esta categoría?')) return;
+    const { error } = await sb.from('categorias_egreso').delete().eq('id', id);
+    if (error) return alert('No se pudo eliminar: ' + error.message);
+    cargarCategorias();
+  };
+
+  // ---------- FACTURAS ----------
+  document.getElementById('fMontoNeto').addEventListener('input', autocompletarTotal);
+  document.getElementById('fIva').addEventListener('input', autocompletarTotal);
+  function autocompletarTotal() {
+    const neto = parseFloat(document.getElementById('fMontoNeto').value) || 0;
+    const iva = parseFloat(document.getElementById('fIva').value) || 0;
+    if (neto || iva) document.getElementById('fMontoTotal').value = neto + iva;
+  }
+
+  async function cargarFacturas() {
+    const { data } = await sb.from('facturas')
+      .select('*, proveedores(razon_social), categorias_egreso(nombre), pagos_factura(monto)')
+      .eq('empresa_id', empresaId)
+      .order('fecha_vencimiento', { ascending: true });
+
+    const facturas = data || [];
+    const hoy = new Date().toISOString().slice(0, 10);
+
+    document.getElementById('tablaFacturas').innerHTML = facturas.map(f => {
+      const pagado = (f.pagos_factura || []).reduce((s, p) => s + Number(p.monto), 0);
+      const saldo = Number(f.monto_total) - pagado;
+      const vencida = f.estado !== 'pagada' && f.fecha_vencimiento && f.fecha_vencimiento < hoy;
+      return `
+      <tr>
+        <td>${f.folio || '-'}</td>
+        <td>${f.proveedores?.razon_social || '-'}</td>
+        <td>${f.categorias_egreso?.nombre || '-'}</td>
+        <td style="${vencida ? 'color:#b3261e;font-weight:600;' : ''}">${f.fecha_vencimiento || '-'}</td>
+        <td>${fmt(f.monto_total)}</td>
+        <td>${fmt(saldo)}</td>
+        <td><span class="badge ${f.estado}">${f.estado}</span></td>
+        <td class="row-actions">
+          ${f.estado !== 'pagada' ? `<button class="btn small secondary" onclick="abrirPago('${f.id}', ${saldo})">Registrar pago</button>` : ''}
+        </td>
+      </tr>`;
+    }).join('') || '<tr><td colspan="8">Sin facturas aún</td></tr>';
+  }
+
+  document.getElementById('facturaForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const { error } = await sb.from('facturas').insert({
+      empresa_id: empresaId,
+      proveedor_id: document.getElementById('fProveedor').value || null,
+      categoria_id: document.getElementById('fCategoria').value || null,
+      folio: document.getElementById('fFolio').value,
+      fecha_emision: document.getElementById('fFechaEmision').value || null,
+      fecha_vencimiento: document.getElementById('fFechaVenc').value || null,
+      monto_neto: document.getElementById('fMontoNeto').value || 0,
+      iva: document.getElementById('fIva').value || 0,
+      monto_total: document.getElementById('fMontoTotal').value,
+      observaciones: document.getElementById('fObs').value
+    });
+    if (error) return showMsg('facturaMsg', 'Error: ' + error.message, false);
+    showMsg('facturaMsg', 'Factura guardada.', true);
+    e.target.reset();
+    cargarFacturas();
+    cargarResumen();
+  });
+
+  window.abrirPago = async (facturaId, saldo) => {
+    const monto = prompt(`Saldo pendiente: ${fmt(saldo)}\n\nMonto a pagar:`, saldo);
+    if (!monto || isNaN(monto)) return;
+    const fecha = prompt('Fecha de pago (AAAA-MM-DD):', new Date().toISOString().slice(0, 10));
+    if (!fecha) return;
+    const medio = prompt('Medio de pago (transferencia / cheque / efectivo):', 'transferencia');
+
+    const { error } = await sb.from('pagos_factura').insert({
+      factura_id: facturaId,
+      monto: parseFloat(monto),
+      fecha_pago: fecha,
+      medio_pago: medio
+    });
+    if (error) return alert('Error al registrar el pago: ' + error.message);
+    cargarFacturas();
+    cargarResumen();
+  };
+
+  // ---------- RESUMEN ----------
+  async function cargarResumen() {
+    const { data: facturas } = await sb.from('facturas')
+      .select('*, categorias_egreso(nombre), proveedores(razon_social), pagos_factura(monto, fecha_pago)')
+      .eq('empresa_id', empresaId);
+
+    const hoy = new Date();
+    const hoyStr = hoy.toISOString().slice(0, 10);
+    const mesActual = hoyStr.slice(0, 7);
+
+    let pendiente = 0, vencidas = 0, pagadoMes = 0, activas = 0;
+    const porCategoria = {};
+    const porProveedor = {};
+
+    (facturas || []).forEach(f => {
+      const pagado = (f.pagos_factura || []).reduce((s, p) => s + Number(p.monto), 0);
+      const saldo = Number(f.monto_total) - pagado;
+      if (f.estado !== 'pagada') { pendiente += saldo; activas++; }
+      if (f.estado !== 'pagada' && f.fecha_vencimiento && f.fecha_vencimiento < hoyStr) vencidas++;
+
+      (f.pagos_factura || []).forEach(p => {
+        if (p.fecha_pago && p.fecha_pago.slice(0, 7) === mesActual) {
+          pagadoMes += Number(p.monto);
+          const cat = f.categorias_egreso?.nombre || 'Sin categoría';
+          const prov = f.proveedores?.razon_social || 'Sin proveedor';
+          porCategoria[cat] = (porCategoria[cat] || 0) + Number(p.monto);
+          porProveedor[prov] = (porProveedor[prov] || 0) + Number(p.monto);
+        }
+      });
+    });
+
+    document.getElementById('cardPendiente').textContent = fmt(pendiente);
+    document.getElementById('cardVencidas').textContent = vencidas;
+    document.getElementById('cardPagadoMes').textContent = fmt(pagadoMes);
+    document.getElementById('cardTotalFacturas').textContent = activas;
+
+    document.getElementById('tablaPorCategoria').innerHTML =
+      Object.entries(porCategoria).sort((a, b) => b[1] - a[1]).map(([k, v]) => `<tr><td>${k}</td><td>${fmt(v)}</td></tr>`).join('')
+      || '<tr><td colspan="2">Sin pagos este mes</td></tr>';
+
+    document.getElementById('tablaPorProveedor').innerHTML =
+      Object.entries(porProveedor).sort((a, b) => b[1] - a[1]).map(([k, v]) => `<tr><td>${k}</td><td>${fmt(v)}</td></tr>`).join('')
+      || '<tr><td colspan="2">Sin pagos este mes</td></tr>';
+  }
+
+  init();
+</script>
+
+</body>
+</html>
