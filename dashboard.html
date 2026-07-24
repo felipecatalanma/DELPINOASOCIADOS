@@ -7,80 +7,48 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    background: #f4f6f4;
-    min-height: 100vh;
-  }
-  header {
-    background: #fff;
-    border-bottom: 1px solid #e2e8e2;
-    padding: 14px 28px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-  header h1 {
-    font-size: 16px;
-    color: #2d3b2d;
-  }
-  header .user-info {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    font-size: 13px;
-    color: #667066;
-  }
-  header button {
-    background: none;
-    border: 1px solid #d8ded8;
-    padding: 6px 12px;
-    border-radius: 6px;
-    font-size: 12px;
-    color: #445044;
-    cursor: pointer;
-  }
-  header button:hover { background: #f0f4f0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f4f6f4; color: #2d3b2d; }
 
-  .container {
-    max-width: 960px;
-    margin: 0 auto;
-    padding: 32px 24px;
-  }
+  .app-shell { display: flex; min-height: 100vh; }
 
-  .empresa-selector {
-    margin-bottom: 28px;
-  }
-  .empresa-selector label {
-    display: block;
-    font-size: 13px;
-    font-weight: 600;
-    color: #445044;
-    margin-bottom: 8px;
-  }
-  .empresa-selector select {
-    width: 100%;
-    max-width: 420px;
-    padding: 10px 12px;
-    border: 1px solid #d8ded8;
-    border-radius: 8px;
-    font-size: 14px;
-    background: white;
-  }
+  /* ---------- SIDEBAR ---------- */
+  .sidebar { width: 260px; flex-shrink: 0; background: #1b2b4a; color: #cdd6e8; display: flex; flex-direction: column; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
+  .sidebar a { text-decoration: none; }
 
-  .modules {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-    gap: 16px;
-  }
-  .module-card {
-    background: white;
-    border-radius: 10px;
-    padding: 20px;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
-    border: 1px solid #e2e8e2;
-    cursor: pointer;
-  }
+  .sidebar-header { padding: 18px 18px 14px; border-bottom: 1px solid rgba(255,255,255,0.08); }
+  .cambiar-empresa { display: block; font-size: 12px; color: #8fa3c9; margin-bottom: 14px; }
+  .cambiar-empresa:hover { color: #cdd6e8; }
+  .empresa-chip { display: flex; align-items: center; gap: 10px; }
+  .empresa-avatar { width: 34px; height: 34px; border-radius: 8px; background: #3d9d6f; color: white; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; flex-shrink: 0; }
+  .empresa-nombre { font-size: 13px; font-weight: 700; color: #fff; line-height: 1.3; }
+  .empresa-tipo { font-size: 11px; color: #8fa3c9; }
+
+  .sidebar-nav { flex: 1; padding: 14px 10px; }
+  .nav-section { font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #6c7fa3; padding: 14px 10px 6px; }
+  .nav-item { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 6px; font-size: 13px; font-weight: 600; color: #cdd6e8; cursor: pointer; }
+  .nav-item:hover { background: rgba(255,255,255,0.06); }
+  .nav-item.active { background: #2c4470; color: #fff; }
+  .nav-item.disabled { color: #55648a; cursor: not-allowed; }
+  .nav-item .icon { width: 18px; text-align: center; }
+
+  .sidebar-footer { padding: 14px 18px; border-top: 1px solid rgba(255,255,255,0.08); display: flex; align-items: center; gap: 10px; }
+  .user-avatar { width: 32px; height: 32px; border-radius: 50%; background: #3d9d6f; color: white; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; flex-shrink: 0; }
+  .user-info-text { flex: 1; min-width: 0; }
+  .user-email { font-size: 12px; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .user-role { font-size: 11px; color: #8fa3c9; }
+  .logout-icon-btn { background: none; border: none; color: #8fa3c9; cursor: pointer; font-size: 16px; padding: 4px; }
+  .logout-icon-btn:hover { color: #fff; }
+
+  /* ---------- MAIN CONTENT ---------- */
+  .main-content { flex: 1; min-width: 0; }
+  .container { max-width: 960px; margin: 0 auto; padding: 32px 24px; }
+
+  .empresa-selector { margin-bottom: 28px; }
+  .empresa-selector label { display: block; font-size: 13px; font-weight: 600; color: #445044; margin-bottom: 8px; }
+  .empresa-selector select { width: 100%; max-width: 420px; padding: 10px 12px; border: 1px solid #d8ded8; border-radius: 8px; font-size: 14px; background: white; }
+
+  .modules { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
+  .module-card { background: white; border-radius: 10px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); border: 1px solid #e2e8e2; cursor: pointer; }
   .module-card:hover { border-color: #4a7c4a; }
   .module-card.disabled { opacity: 0.5; cursor: not-allowed; }
   .module-card h3 { font-size: 15px; color: #2d3b2d; margin-bottom: 6px; }
@@ -91,52 +59,80 @@
 </head>
 <body>
 
-<header>
-  <h1>Sistema Agrícola</h1>
-  <div class="user-info">
-    <span id="userEmail"></span>
-    <button id="logoutBtn">Cerrar sesión</button>
-  </div>
-</header>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <a href="dashboard.html" class="cambiar-empresa">&larr; Cambiar empresa</a>
+      <div class="empresa-chip">
+        <div class="empresa-avatar" id="empresaAvatar">?</div>
+        <div>
+          <div class="empresa-nombre" id="empresaNombreSidebar">Cargando...</div>
+          <div class="empresa-tipo">Agrícola</div>
+        </div>
+      </div>
+    </div>
 
-<div class="container" id="mainContent" style="display:none;">
-  <div class="empresa-selector">
-    <label for="empresaSelect">Empresa activa</label>
-    <select id="empresaSelect"></select>
-  </div>
+    <nav class="sidebar-nav">
+      <div class="nav-section">Principal</div>
+      <a href="dashboard.html" class="nav-item active"><span class="icon">&#8962;</span> Dashboard</a>
 
-  <div class="modules">
-    <div class="module-card" data-module="facturas">
-      <h3>Facturas</h3>
-      <p>Carga, seguimiento de pagos y flujo de caja</p>
+      <div class="nav-section">Contabilidad</div>
+      <a href="facturas.html" class="nav-item"><span class="icon">&#128220;</span> Facturas</a>
+      <div class="nav-item disabled"><span class="icon">&#128176;</span> Remuneraciones</div>
+
+      <div class="nav-section">Finanzas</div>
+      <a href="flujo-caja.html" class="nav-item"><span class="icon">&#128200;</span> Flujo de Caja</a>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="user-avatar" id="userAvatarSidebar">?</div>
+      <div class="user-info-text">
+        <div class="user-email" id="userEmailSidebar">...</div>
+        <div class="user-role">Usuario</div>
+      </div>
+      <button class="logout-icon-btn" id="logoutBtn" title="Cerrar sesión">&#9211;</button>
     </div>
-    <div class="module-card" data-module="remuneraciones">
-      <h3>Remuneraciones</h3>
-      <p>Liquidaciones y pagos de sueldos</p>
+  </aside>
+
+  <main class="main-content">
+    <div class="container" id="mainContent" style="display:none;">
+      <div class="empresa-selector">
+        <label for="empresaSelect">Empresa activa</label>
+        <select id="empresaSelect"></select>
+      </div>
+
+      <div class="modules">
+        <div class="module-card" data-module="facturas">
+          <h3>Facturas</h3>
+          <p>Carga, seguimiento de pagos y flujo de caja</p>
+        </div>
+        <div class="module-card" data-module="flujo-caja">
+          <h3>Flujo de Caja</h3>
+          <p>Calendario de pagos semanal y saldos bancarios</p>
+        </div>
+        <div class="module-card disabled" data-module="reportes">
+          <h3>Remuneraciones</h3>
+          <p>Próximamente</p>
+        </div>
+      </div>
     </div>
-    <div class="module-card" data-module="flujo-caja">
-      <h3>Flujo de Caja</h3>
-      <p>Calendario de pagos semanal y saldos bancarios</p>
-    </div>
-    <div class="module-card disabled" data-module="reportes">
-      <h3>Reportes consolidados</h3>
-      <p>Próximamente</p>
-    </div>
-  </div>
+
+    <div class="loading" id="loadingMsg">Cargando...</div>
+  </main>
 </div>
-
-<div class="loading" id="loadingMsg">Cargando...</div>
 
 <script>
   const SUPABASE_URL = 'https://fnnbslztdlumkwrxgmns.supabase.co';
   const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZubmJzbHp0ZGx1bWt3cnhnbW5zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ4NDYxNjYsImV4cCI6MjEwMDQyMjE2Nn0.HOSw8d5PAf55yYa4dR-V2LXjfcLKaF92357DAkgayrc';
-
   const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
   const loadingMsg = document.getElementById('loadingMsg');
   const mainContent = document.getElementById('mainContent');
-  const userEmailEl = document.getElementById('userEmail');
+  const userEmailEl = document.getElementById('userEmailSidebar');
+  const userAvatarEl = document.getElementById('userAvatarSidebar');
   const empresaSelect = document.getElementById('empresaSelect');
+  const empresaAvatarEl = document.getElementById('empresaAvatar');
+  const empresaNombreEl = document.getElementById('empresaNombreSidebar');
 
   async function init() {
     const { data: { session } } = await sb.auth.getSession();
@@ -147,8 +143,8 @@
     }
 
     userEmailEl.textContent = session.user.email;
+    userAvatarEl.textContent = session.user.email.charAt(0).toUpperCase();
 
-    // Traer las empresas a las que este usuario tiene acceso
     const { data: empresas, error } = await sb
       .from('usuario_empresas')
       .select('rol, empresas ( id, razon_social, nombre_fantasia )')
@@ -163,7 +159,6 @@
       `<option value="${e.empresas.id}">${e.empresas.nombre_fantasia || e.empresas.razon_social} (${e.rol})</option>`
     ).join('');
 
-    // Restaurar empresa previamente seleccionada si sigue disponible
     const savedEmpresaId = localStorage.getItem('empresa_activa_id');
     if (savedEmpresaId && [...empresaSelect.options].some(o => o.value === savedEmpresaId)) {
       empresaSelect.value = savedEmpresaId;
@@ -171,12 +166,22 @@
       localStorage.setItem('empresa_activa_id', empresaSelect.value);
     }
 
+    actualizarChipEmpresa();
+
     empresaSelect.addEventListener('change', () => {
       localStorage.setItem('empresa_activa_id', empresaSelect.value);
+      actualizarChipEmpresa();
     });
 
     loadingMsg.style.display = 'none';
     mainContent.style.display = 'block';
+  }
+
+  function actualizarChipEmpresa() {
+    const texto = empresaSelect.options[empresaSelect.selectedIndex]?.textContent || '?';
+    const nombre = texto.replace(/\s*\([^)]*\)\s*$/, '');
+    empresaNombreEl.textContent = nombre;
+    empresaAvatarEl.textContent = nombre.charAt(0).toUpperCase();
   }
 
   document.getElementById('logoutBtn').addEventListener('click', async () => {
