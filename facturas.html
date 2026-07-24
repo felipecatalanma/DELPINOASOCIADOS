@@ -213,6 +213,35 @@
 
 <div class="loading" id="loadingMsg">Cargando...</div>
 
+<!-- MODAL REGISTRAR PAGO -->
+<div id="pagoModalOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); align-items:center; justify-content:center; z-index:100;">
+  <div style="background:white; border-radius:10px; padding:24px; width:100%; max-width:420px;">
+    <h3 style="font-size:15px; margin-bottom:4px;">Registrar pago</h3>
+    <p style="font-size:12px; color:#7a8a7a; margin-bottom:16px;">Saldo pendiente: <strong id="pagoSaldoTexto"></strong></p>
+    <div class="msg" id="pagoMsg"></div>
+    <form id="pagoForm">
+      <input type="hidden" id="pagoFacturaId">
+      <div class="form-grid">
+        <div><label>Fecha de pago *</label><input type="date" id="pagoFecha" required></div>
+        <div><label>Monto *</label><input type="number" step="1" id="pagoMonto" required></div>
+        <div><label>Medio de pago</label>
+          <select id="pagoMedio">
+            <option value="transferencia">Transferencia</option>
+            <option value="cheque">Cheque</option>
+            <option value="efectivo">Efectivo</option>
+          </select>
+        </div>
+        <div><label>N° referencia / operación</label><input type="text" id="pagoReferencia"></div>
+      </div>
+      <div style="margin-bottom:14px;"><label>Comprobante (PDF o imagen, opcional)</label><input type="file" id="pagoComprobante" accept="application/pdf,image/*"></div>
+      <div style="display:flex; gap:8px; justify-content:flex-end;">
+        <button type="button" class="btn secondary" id="pagoCancelar">Cancelar</button>
+        <button type="submit" class="btn">Guardar pago</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <script>
   const SUPABASE_URL = 'https://fnnbslztdlumkwrxgmns.supabase.co';
   const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZubmJzbHp0ZGx1bWt3cnhnbW5zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ4NDYxNjYsImV4cCI6MjEwMDQyMjE2Nn0.HOSw8d5PAf55yYa4dR-V2LXjfcLKaF92357DAkgayrc';
@@ -560,23 +589,48 @@
     window.open(data.signedUrl, '_blank');
   };
 
-  window.abrirPago = async (facturaId, saldo) => {
-    const monto = prompt(`Saldo pendiente: ${fmt(saldo)}\n\nMonto a pagar:`, saldo);
-    if (!monto || isNaN(monto)) return;
-    const fecha = prompt('Fecha de pago (AAAA-MM-DD):', new Date().toISOString().slice(0, 10));
-    if (!fecha) return;
-    const medio = prompt('Medio de pago (transferencia / cheque / efectivo):', 'transferencia');
+  window.abrirPago = (facturaId, saldo) => {
+    document.getElementById('pagoFacturaId').value = facturaId;
+    document.getElementById('pagoSaldoTexto').textContent = fmt(saldo);
+    document.getElementById('pagoMonto').value = saldo;
+    document.getElementById('pagoFecha').value = new Date().toISOString().slice(0, 10);
+    document.getElementById('pagoReferencia').value = '';
+    document.getElementById('pagoComprobante').value = '';
+    document.getElementById('pagoMsg').className = 'msg';
+    document.getElementById('pagoModalOverlay').style.display = 'flex';
+  };
 
-    const { error } = await sb.from('pagos_factura').insert({
+  document.getElementById('pagoCancelar').addEventListener('click', () => {
+    document.getElementById('pagoModalOverlay').style.display = 'none';
+  });
+
+  document.getElementById('pagoForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const facturaId = document.getElementById('pagoFacturaId').value;
+    const comprobante = document.getElementById('pagoComprobante').files[0];
+
+    const { data: nuevoPago, error } = await sb.from('pagos_factura').insert({
       factura_id: facturaId,
-      monto: parseFloat(monto),
-      fecha_pago: fecha,
-      medio_pago: medio
-    });
-    if (error) return alert('Error al registrar el pago: ' + error.message);
+      fecha_pago: document.getElementById('pagoFecha').value,
+      monto: parseFloat(document.getElementById('pagoMonto').value),
+      medio_pago: document.getElementById('pagoMedio').value,
+      referencia: document.getElementById('pagoReferencia').value
+    }).select().single();
+
+    if (error) return showMsg('pagoMsg', 'Error: ' + error.message, false);
+
+    if (comprobante) {
+      const ruta = `${empresaId}/${nuevoPago.id}_${comprobante.name}`;
+      const { error: uploadError } = await sb.storage.from('comprobantes').upload(ruta, comprobante);
+      if (!uploadError) {
+        await sb.from('pagos_factura').update({ comprobante_url: ruta }).eq('id', nuevoPago.id);
+      }
+    }
+
+    document.getElementById('pagoModalOverlay').style.display = 'none';
     cargarFacturas();
     cargarResumen();
-  };
+  });
 
   // ---------- RESUMEN ----------
   async function cargarResumen() {
