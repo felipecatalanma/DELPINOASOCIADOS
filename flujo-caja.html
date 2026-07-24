@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sistema Agrícola — Flujo de Caja</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f4f6f4; min-height: 100vh; color: #2d3b2d; }
+  header { background: #fff; border-bottom: 1px solid #e2e8e2; padding: 14px 28px; display: flex; align-items: center; justify-content: space-between; }
+  header .left { display: flex; align-items: center; gap: 18px; }
+  header a.back { font-size: 13px; color: #4a7c4a; text-decoration: none; }
+  header a.back:hover { text-decoration: underline; }
+  header h1 { font-size: 16px; }
+  header .empresa-badge { font-size: 12px; background: #eaf2ea; color: #3d6b3d; padding: 4px 10px; border-radius: 12px; font-weight: 600; }
+  header .user-info { display: flex; align-items: center; gap: 14px; font-size: 13px; color: #667066; }
+  header button { background: none; border: 1px solid #d8ded8; padding: 6px 12px; border-radius: 6px; font-size: 12px; color: #445044; cursor: pointer; }
+  header button:hover { background: #f0f4f0; }
+
+  .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+
+  .tabs { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 1px solid #e2e8e2; }
+  .tab { padding: 10px 16px; font-size: 13px; font-weight: 600; color: #7a8a7a; cursor: pointer; border-bottom: 2px solid transparent; }
+  .tab.active { color: #3d6b3d; border-bottom-color: #3d6b3d; }
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  .section-title { font-size: 14px; font-weight: 700; margin: 20px 0 10px; color: #445044; }
+  .form-box { background: white; border: 1px solid #e2e8e2; border-radius: 10px; padding: 18px; margin-bottom: 20px; }
+  .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 12px; }
+  label { display: block; font-size: 12px; font-weight: 600; color: #445044; margin-bottom: 4px; }
+  input, select { width: 100%; padding: 8px 10px; border: 1px solid #d8ded8; border-radius: 6px; font-size: 13px; }
+  .btn { background: #3d6b3d; color: white; border: none; padding: 9px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .btn:hover { background: #345c34; }
+  .btn.small { padding: 5px 10px; font-size: 12px; }
+  .btn.secondary { background: white; border: 1px solid #d8ded8; color: #445044; }
+  .btn.secondary:hover { background: #f0f4f0; }
+  .btn.danger { background: #fdecea; color: #b3261e; border: 1px solid #f4c7c2; }
+
+  .msg { font-size: 12px; padding: 8px 12px; border-radius: 6px; margin-bottom: 12px; display: none; }
+  .msg.ok { background: #e6f4e6; color: #2e7d32; display: block; }
+  .msg.err { background: #fdecea; color: #b3261e; display: block; }
+
+  .tabla-scroll { overflow-x: auto; background: white; border: 1px solid #e2e8e2; border-radius: 10px; margin-bottom: 24px; }
+  table.calendario { border-collapse: collapse; font-size: 12px; white-space: nowrap; min-width: 100%; }
+  table.calendario th, table.calendario td { padding: 7px 10px; border-bottom: 1px solid #eef2ee; border-right: 1px solid #eef2ee; text-align: right; }
+  table.calendario th:first-child, table.calendario td:first-child { text-align: left; position: sticky; left: 0; background: white; min-width: 220px; z-index: 1; }
+  table.calendario thead th { background: #2d3b2d; color: white; font-weight: 600; }
+  table.calendario thead th:first-child { background: #2d3b2d; }
+  tr.fila-total td { font-weight: 700; background: #f8faf8; }
+  tr.fila-total-flujo td { font-weight: 700; background: #eaf2ea; color: #2e7d32; }
+  tr.fila-saldo td { font-weight: 700; background: #2d3b2d; color: white; }
+  tr.fila-seccion td:first-child { font-weight: 700; color: #445044; background: #f0f4f0; text-transform: uppercase; font-size: 11px; letter-spacing: 0.03em; }
+
+  table.simple { width: 100%; border-collapse: collapse; background: white; border-radius: 10px; overflow: hidden; border: 1px solid #e2e8e2; margin-bottom: 20px; }
+  table.simple th, table.simple td { text-align: left; padding: 9px 12px; font-size: 13px; border-bottom: 1px solid #eef2ee; }
+  table.simple th { background: #f8faf8; color: #667066; font-weight: 600; }
+
+  .loading { text-align: center; padding: 60px; color: #7a8a7a; font-size: 14px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="left">
+    <a class="back" href="dashboard.html">&larr; Dashboard</a>
+    <h1>Flujo de Caja</h1>
+    <span class="empresa-badge" id="empresaBadge">...</span>
+  </div>
+  <div class="user-info">
+    <span id="userEmail"></span>
+    <button id="logoutBtn">Cerrar sesión</button>
+  </div>
+</header>
+
+<div class="container" id="mainContent" style="display:none;">
+
+  <div class="tabs">
+    <div class="tab active" data-panel="calendario">Calendario</div>
+    <div class="tab" data-panel="bancos">Bancos</div>
+  </div>
+
+  <!-- CALENDARIO -->
+  <div class="panel active" id="panel-calendario">
+    <p style="font-size:12px; color:#7a8a7a; margin-bottom:16px;">Semanas viernes a viernes. Los egresos por facturas se ubican automáticamente según su fecha de vencimiento.</p>
+    <div class="tabla-scroll">
+      <table class="calendario" id="tablaCalendario"></table>
+    </div>
+
+    <div class="section-title">Agregar movimiento manual</div>
+    <div class="form-box">
+      <div class="msg" id="manualMsg"></div>
+      <form id="manualForm">
+        <div class="form-grid">
+          <div><label>Sección</label>
+            <select id="mSeccion">
+              <option value="operacional">Operacional</option>
+              <option value="tributario">Tributario</option>
+              <option value="financiero">Financiero</option>
+            </select>
+          </div>
+          <div><label>Tipo</label>
+            <select id="mTipo">
+              <option value="egreso">Egreso</option>
+              <option value="ingreso">Ingreso</option>
+            </select>
+          </div>
+          <div><label>Concepto *</label><input type="text" id="mConcepto" required placeholder="Ej: Remuneraciones"></div>
+          <div><label>Fecha *</label><input type="date" id="mFecha" required></div>
+          <div><label>Monto *</label><input type="number" step="1" id="mMonto" required></div>
+        </div>
+        <button type="submit" class="btn">Agregar movimiento</button>
+      </form>
+    </div>
+
+    <div class="section-title">Movimientos manuales cargados</div>
+    <table class="simple">
+      <thead><tr><th>Sección</th><th>Tipo</th><th>Concepto</th><th>Fecha</th><th>Monto</th><th></th></tr></thead>
+      <tbody id="tablaManuales"></tbody>
+    </table>
+  </div>
+
+  <!-- BANCOS -->
+  <div class="panel" id="panel-bancos">
+    <div class="form-box">
+      <div class="section-title" style="margin-top:0;">Nueva cuenta bancaria</div>
+      <div class="msg" id="bancoMsg"></div>
+      <form id="bancoForm">
+        <div class="form-grid">
+          <div><label>Nombre de la cuenta / banco *</label><input type="text" id="bNombre" required placeholder="Ej: Banco de Chile Cta Cte"></div>
+        </div>
+        <button type="submit" class="btn">Guardar cuenta</button>
+      </form>
+    </div>
+
+    <div id="bancosContainer"></div>
+  </div>
+
+</div>
+
+<div class="loading" id="loadingMsg">Cargando...</div>
+
+<script>
+  const SUPABASE_URL = 'https://fnnbslztdlumkwrxgmns.supabase.co';
+  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZubmJzbHp0ZGx1bWt3cnhnbW5zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ4NDYxNjYsImV4cCI6MjEwMDQyMjE2Nn0.HOSw8d5PAf55yYa4dR-V2LXjfcLKaF92357DAkgayrc';
+  const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  let empresaId = null;
+  const N_SEMANAS = 12;
+  const fmt = (n) => '$' + Math.round(Number(n || 0)).toLocaleString('es-CL');
+
+  const loadingMsg = document.getElementById('loadingMsg');
+  const mainContent = document.getElementById('mainContent');
+
+  function showMsg(elId, text, ok) {
+    const el = document.getElementById(elId);
+    el.textContent = text;
+    el.className = 'msg ' + (ok ? 'ok' : 'err');
+    setTimeout(() => { el.className = 'msg'; }, 4000);
+  }
+
+  function proximoViernes(fechaStr) {
+    const d = new Date(fechaStr + 'T00:00:00');
+    const dia = d.getDay(); // 0=domingo ... 5=viernes
+    const diff = (5 - dia + 7) % 7;
+    d.setDate(d.getDate() + diff);
+    return d.toISOString().slice(0, 10);
+  }
+
+  function generarSemanas() {
+    const hoy = new Date().toISOString().slice(0, 10);
+    const primerViernes = proximoViernes(hoy);
+    const semanas = [];
+    for (let i = 0; i < N_SEMANAS; i++) {
+      const d = new Date(primerViernes + 'T00:00:00');
+      d.setDate(d.getDate() + i * 7);
+      semanas.push(d.toISOString().slice(0, 10));
+    }
+    return semanas;
+  }
+
+  function formatoCorto(fechaStr) {
+    const [a, m, d] = fechaStr.split('-');
+    const meses = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+    return `${d}-${meses[parseInt(m, 10) - 1]}-${a.slice(2)}`;
+  }
+
+  async function init() {
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) { window.location.href = 'login.html'; return; }
+    document.getElementById('userEmail').textContent = session.user.email;
+
+    empresaId = localStorage.getItem('empresa_activa_id');
+    if (!empresaId) { window.location.href = 'dashboard.html'; return; }
+
+    const { data: empresa } = await sb.from('empresas').select('razon_social, nombre_fantasia').eq('id', empresaId).single();
+    if (empresa) document.getElementById('empresaBadge').textContent = empresa.nombre_fantasia || empresa.razon_social;
+
+    await cargarCalendario();
+    await cargarBancos();
+
+    loadingMsg.style.display = 'none';
+    mainContent.style.display = 'block';
+  }
+
+  document.getElementById('logoutBtn').addEventListener('click', async () => {
+    await sb.auth.signOut();
+    window.location.href = 'login.html';
+  });
+
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById('panel-' + tab.dataset.panel).classList.add('active');
+    });
+  });
+
+  // ---------- CALENDARIO ----------
+  async function cargarCalendario() {
+    const semanas = generarSemanas();
+
+    const [{ data: facturas }, { data: manuales }, { data: bancos }] = await Promise.all([
+      sb.from('facturas').select('monto_total, fecha_vencimiento, estado, categorias_egreso(nombre), pagos_factura(monto)').eq('empresa_id', empresaId).neq('estado', 'pagada'),
+      sb.from('flujo_caja_manual').select('*').eq('empresa_id', empresaId),
+      sb.from('bancos').select('id').eq('empresa_id', empresaId)
+    ]);
+
+    // Saldo bancario total actual (suma del último saldo de cada banco)
+    let saldoInicialHoy = 0;
+    if (bancos && bancos.length) {
+      const { data: saldos } = await sb.from('saldos_bancarios')
+        .select('banco_id, fecha, saldo')
+        .in('banco_id', bancos.map(b => b.id))
+        .order('fecha', { ascending: false });
+      const vistos = new Set();
+      (saldos || []).forEach(s => {
+        if (!vistos.has(s.banco_id)) { vistos.add(s.banco_id); saldoInicialHoy += Number(s.saldo); }
+      });
+    }
+
+    // Egresos operacionales por categoría, agrupados por semana (viernes)
+    const primerViernes = semanas[0];
+    const categoriasSet = new Set();
+    const egresosPorCategoriaSemana = {}; // { categoria: { viernes: monto } }
+
+    (facturas || []).forEach(f => {
+      if (!f.fecha_vencimiento) return;
+      const pagado = (f.pagos_factura || []).reduce((s, p) => s + Number(p.monto), 0);
+      const saldo = Number(f.monto_total) - pagado;
+      if (saldo <= 0) return;
+      let bucket = proximoViernes(f.fecha_vencimiento);
+      if (bucket < primerViernes) bucket = primerViernes;
+      if (!semanas.includes(bucket)) return; // fuera del horizonte visible
+      const cat = f.categorias_egreso?.nombre || 'Sin categoría';
+      categoriasSet.add(cat);
+      egresosPorCategoriaSemana[cat] = egresosPorCategoriaSemana[cat] || {};
+      egresosPorCategoriaSemana[cat][bucket] = (egresosPorCategoriaSemana[cat][bucket] || 0) + saldo;
+    });
+
+    // Movimientos manuales agrupados por sección/tipo/concepto/semana
+    function agruparManual(seccion, tipo) {
+      const grupos = {};
+      (manuales || []).filter(m => m.seccion === seccion && m.tipo === tipo).forEach(m => {
+        let bucket = proximoViernes(m.fecha);
+        if (bucket < primerViernes) bucket = primerViernes;
+        if (!semanas.includes(bucket)) return;
+        grupos[m.concepto] = grupos[m.concepto] || {};
+        grupos[m.concepto][bucket] = (grupos[m.concepto][bucket] || 0) + Number(m.monto);
+      });
+      return grupos;
+    }
+
+    const ingOperacional = agruparManual('operacional', 'ingreso');
+    const ingTributario = agruparManual('tributario', 'ingreso');
+    const egrTributario = agruparManual('tributario', 'egreso');
+    const ingFinanciero = agruparManual('financiero', 'ingreso');
+    const egrFinanciero = agruparManual('financiero', 'egreso');
+
+    function totalesPorSemana(grupos) {
+      const totales = {};
+      semanas.forEach(s => totales[s] = 0);
+      Object.values(grupos).forEach(porSemana => {
+        semanas.forEach(s => totales[s] += (porSemana[s] || 0));
+      });
+      return totales;
+    }
+
+    const totEgrOperacional = totalesPorSemana(egresosPorCategoriaSemana);
+    const totIngOperacional = totalesPorSemana(ingOperacional);
+    const totIngTributario = totalesPorSemana(ingTributario);
+    const totEgrTributario = totalesPorSemana(egrTributario);
+    const totIngFinanciero = totalesPorSemana(ingFinanciero);
+    const totEgrFinanciero = totalesPorSemana(egrFinanciero);
+
+    // ---------- Construcción de la tabla HTML ----------
+    let html = '<thead><tr><th>Concepto</th>';
+    semanas.forEach(s => html += `<th>${formatoCorto(s)}</th>`);
+    html += '</tr></thead><tbody>';
+
+    function filaCategorias(grupos) {
+      let f = '';
+      Object.keys(grupos).sort().forEach(cat => {
+        f += `<tr><td>${cat}</td>`;
+        semanas.forEach(s => f += `<td>${grupos[cat][s] ? fmt(grupos[cat][s]) : '-'}</td>`);
+        f += '</tr>';
+      });
+      return f;
+    }
+
+    function filaTotal(nombre, totales, clase) {
+      let f = `<tr class="${clase || 'fila-total'}"><td>${nombre}</td>`;
+      semanas.forEach(s => f += `<td>${fmt(totales[s])}</td>`);
+      return f + '</tr>';
+    }
+
+    // Saldo inicial acumulado semana a semana
+    const saldoInicialPorSemana = {};
+    const saldoFinalPorSemana = {};
+    let acumulado = saldoInicialHoy;
+    semanas.forEach(s => {
+      saldoInicialPorSemana[s] = acumulado;
+      const flujoNeto = (totIngOperacional[s] - totEgrOperacional[s]) + (totIngTributario[s] - totEgrTributario[s]) + (totIngFinanciero[s] - totEgrFinanciero[s]);
+      acumulado = acumulado + flujoNeto;
+      saldoFinalPorSemana[s] = acumulado;
+    });
+
+    html += `<tr class="fila-saldo"><td>Saldo inicial</td>`;
+    semanas.forEach(s => html += `<td>${fmt(saldoInicialPorSemana[s])}</td>`);
+    html += '</tr>';
+
+    html += '<tr class="fila-seccion"><td>Flujo operacional</td>' + semanas.map(() => '<td></td>').join('') + '</tr>';
+    if (Object.keys(ingOperacional).length) html += filaCategorias(ingOperacional) + filaTotal('Total ingresos operacionales', totIngOperacional);
+    html += filaCategorias(egresosPorCategoriaSemana);
+    html += filaTotal('Total egresos operacionales', totEgrOperacional);
+
+    html += '<tr class="fila-seccion"><td>Flujo tributario</td>' + semanas.map(() => '<td></td>').join('') + '</tr>';
+    if (Object.keys(ingTributario).length) html += filaCategorias(ingTributario);
+    if (Object.keys(egrTributario).length) html += filaCategorias(egrTributario);
+    html += filaTotal('Total flujo tributario', semanas.reduce((acc, s) => { acc[s] = totIngTributario[s] - totEgrTributario[s]; return acc; }, {}));
+
+    html += '<tr class="fila-seccion"><td>Flujo financiero</td>' + semanas.map(() => '<td></td>').join('') + '</tr>';
+    if (Object.keys(ingFinanciero).length) html += filaCategorias(ingFinanciero);
+    if (Object.keys(egrFinanciero).length) html += filaCategorias(egrFinanciero);
+    html += filaTotal('Total flujo financiero', semanas.reduce((acc, s) => { acc[s] = totIngFinanciero[s] - totEgrFinanciero[s]; return acc; }, {}));
+
+    html += filaTotal('Saldo final', saldoFinalPorSemana, 'fila-saldo');
+    html += '</tbody>';
+
+    document.getElementById('tablaCalendario').innerHTML = html;
+
+    renderManuales(manuales || []);
+  }
+
+  function renderManuales(manuales) {
+    document.getElementById('tablaManuales').innerHTML = manuales
+      .sort((a, b) => a.fecha.localeCompare(b.fecha))
+      .map(m => `
+        <tr>
+          <td>${m.seccion}</td><td>${m.tipo}</td><td>${m.concepto}</td><td>${m.fecha}</td><td>${fmt(m.monto)}</td>
+          <td><button class="btn small danger" onclick="borrarManual('${m.id}')">Eliminar</button></td>
+        </tr>`).join('') || '<tr><td colspan="6">Sin movimientos manuales aún</td></tr>';
+  }
+
+  document.getElementById('manualForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const { error } = await sb.from('flujo_caja_manual').insert({
+      empresa_id: empresaId,
+      seccion: document.getElementById('mSeccion').value,
+      tipo: document.getElementById('mTipo').value,
+      concepto: document.getElementById('mConcepto').value,
+      fecha: document.getElementById('mFecha').value,
+      monto: document.getElementById('mMonto').value
+    });
+    if (error) return showMsg('manualMsg', 'Error: ' + error.message, false);
+    showMsg('manualMsg', 'Movimiento agregado.', true);
+    e.target.reset();
+    cargarCalendario();
+  });
+
+  window.borrarManual = async (id) => {
+    if (!confirm('¿Eliminar este movimiento?')) return;
+    const { error } = await sb.from('flujo_caja_manual').delete().eq('id', id);
+    if (error) return alert('No se pudo eliminar: ' + error.message);
+    cargarCalendario();
+  };
+
+  // ---------- BANCOS ----------
+  async function cargarBancos() {
+    const { data: bancos } = await sb.from('bancos').select('*').eq('empresa_id', empresaId).order('nombre');
+
+    let html = '';
+    for (const b of (bancos || [])) {
+      const { data: saldos } = await sb.from('saldos_bancarios').select('*').eq('banco_id', b.id).order('fecha', { ascending: false }).limit(5);
+      const saldoActual = saldos && saldos.length ? saldos[0].saldo : null;
+
+      html += `
+      <div class="form-box">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+          <div>
+            <strong>${b.nombre}</strong>
+            <div style="font-size:12px; color:#7a8a7a;">Saldo actual: ${saldoActual != null ? fmt(saldoActual) : 'Sin registros'}</div>
+          </div>
+          <button class="btn small danger" onclick="borrarBanco('${b.id}')">Eliminar cuenta</button>
+        </div>
+        <form class="saldoForm" data-banco="${b.id}" style="display:flex; gap:10px; align-items:end; margin-bottom:12px; flex-wrap:wrap;">
+          <div><label>Fecha</label><input type="date" class="saldoFecha" value="${new Date().toISOString().slice(0,10)}"></div>
+          <div><label>Saldo</label><input type="number" step="1" class="saldoMonto" required></div>
+          <button type="submit" class="btn small">Registrar saldo</button>
+        </form>
+        <table class="simple">
+          <thead><tr><th>Fecha</th><th>Saldo</th></tr></thead>
+          <tbody>${(saldos || []).map(s => `<tr><td>${s.fecha}</td><td>${fmt(s.saldo)}</td></tr>`).join('') || '<tr><td colspan="2">Sin registros</td></tr>'}</tbody>
+        </table>
+      </div>`;
+    }
+    document.getElementById('bancosContainer').innerHTML = html || '<p style="font-size:13px; color:#7a8a7a;">Aún no registras cuentas bancarias.</p>';
+
+    document.querySelectorAll('.saldoForm').forEach(form => {
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const bancoId = form.dataset.banco;
+        const fecha = form.querySelector('.saldoFecha').value;
+        const monto = form.querySelector('.saldoMonto').value;
+        const { error } = await sb.from('saldos_bancarios').upsert({ banco_id: bancoId, fecha, saldo: monto }, { onConflict: 'banco_id,fecha' });
+        if (error) return alert('Error: ' + error.message);
+        cargarBancos();
+        cargarCalendario();
+      });
+    });
+  }
+
+  document.getElementById('bancoForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const { error } = await sb.from('bancos').insert({ empresa_id: empresaId, nombre: document.getElementById('bNombre').value });
+    if (error) return showMsg('bancoMsg', 'Error: ' + error.message, false);
+    showMsg('bancoMsg', 'Cuenta guardada.', true);
+    e.target.reset();
+    cargarBancos();
+  });
+
+  window.borrarBanco = async (id) => {
+    if (!confirm('¿Eliminar esta cuenta bancaria y todo su historial de saldos?')) return;
+    const { error } = await sb.from('bancos').delete().eq('id', id);
+    if (error) return alert('No se pudo eliminar: ' + error.message);
+    cargarBancos();
+    cargarCalendario();
+  };
+
+  init();
+</script>
+
+</body>
+</html>
