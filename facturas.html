@@ -182,6 +182,23 @@
   <!-- FACTURAS -->
   <div class="panel" id="panel-facturas">
     <div class="form-box">
+      <div class="section-title" style="margin-top:0;">Carga masiva de facturas (PDF)</div>
+      <div class="msg" id="masivaMsg"></div>
+      <p style="font-size:12px; color:#667066; margin-bottom:10px;">Selecciona varios PDFs a la vez. El sistema los procesa y arma una tabla para revisar antes de guardar.</p>
+      <div style="display:flex; gap:10px; align-items:end; flex-wrap:wrap; margin-bottom:14px;">
+        <div style="flex:1; min-width:220px;"><label>PDFs de facturas</label><input type="file" id="fArchivosMasivo" accept="application/pdf" multiple></div>
+        <button type="button" class="btn secondary" id="procesarMasivoBtn">Procesar PDFs</button>
+      </div>
+      <div class="tabla-scroll" style="overflow-x:auto;">
+        <table id="tablaCargaMasiva" style="display:none;"></table>
+      </div>
+      <div id="masivaAcciones" style="display:none; margin-top:12px; gap:8px;">
+        <button type="button" class="btn" id="guardarMasivoBtn">Guardar todas las facturas</button>
+        <button type="button" class="btn secondary" id="cancelarMasivoBtn">Cancelar</button>
+      </div>
+    </div>
+
+    <div class="form-box">
       <div class="section-title" style="margin-top:0;">Nueva factura</div>
       <div class="msg" id="facturaMsg"></div>
 
@@ -669,6 +686,142 @@
       msgEl.textContent = 'No se pudo leer el PDF automáticamente. Completa los campos manualmente.';
       console.error(err);
     }
+  });
+
+  // ---------- CARGA MASIVA DE FACTURAS ----------
+  async function extraerTextoPDF(file) {
+    const buffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+    let texto = '';
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      texto += content.items.map(it => it.str).join(' ') + ' ';
+    }
+    return texto;
+  }
+
+  let cargaMasivaDatos = [];
+
+  document.getElementById('procesarMasivoBtn').addEventListener('click', async () => {
+    const files = [...document.getElementById('fArchivosMasivo').files];
+    if (files.length === 0) return showMsg('masivaMsg', 'Selecciona al menos un PDF.', false);
+
+    showMsg('masivaMsg', `Procesando ${files.length} archivo(s)...`, true);
+    cargaMasivaDatos = [];
+
+    for (const file of files) {
+      try {
+        const texto = await extraerTextoPDF(file);
+        const datos = extraerDatosFactura(texto);
+        const rutProveedor = (datos.ruts || []).find(r => !empresasRuts.find(e => e.normalizado === r.normalizado));
+        let proveedorId = '';
+        let alerta = '';
+        if (rutProveedor) {
+          const prov = proveedores.find(p => normalizarRut(p.rut) === rutProveedor.normalizado);
+          if (prov) proveedorId = prov.id;
+          else alerta = `Proveedor no registrado (RUT ${rutProveedor.display})`;
+        } else {
+          alerta = 'No se detectó RUT de proveedor';
+        }
+        cargaMasivaDatos.push({
+          file, nombreArchivo: file.name,
+          folio: datos.folio || '', proveedorId, categoriaId: '',
+          fechaEmision: datos.fechaEmision || '', fechaVencimiento: datos.fechaVencimiento || '',
+          montoNeto: datos.montoNeto ?? '', iva: datos.iva ?? '', montoTotal: datos.montoTotal ?? '',
+          alerta
+        });
+      } catch (err) {
+        cargaMasivaDatos.push({ file, nombreArchivo: file.name, folio: '', proveedorId: '', categoriaId: '', fechaEmision: '', fechaVencimiento: '', montoNeto: '', iva: '', montoTotal: '', alerta: 'No se pudo leer este PDF' });
+        console.error(err);
+      }
+    }
+
+    renderTablaCargaMasiva();
+    showMsg('masivaMsg', `${cargaMasivaDatos.length} archivo(s) procesado(s). Revisa y corrige antes de guardar.`, true);
+  });
+
+  function opcionesSelect(lista, campoTexto, seleccionadoId, placeholder) {
+    let html = `<option value="">${placeholder}</option>`;
+    lista.forEach(item => {
+      html += `<option value="${item.id}" ${item.id === seleccionadoId ? 'selected' : ''}>${item[campoTexto]}</option>`;
+    });
+    return html;
+  }
+
+  function renderTablaCargaMasiva() {
+    let html = '<thead><tr><th>Archivo</th><th>Proveedor</th><th>Categoría</th><th>Folio</th><th>F. Emisión</th><th>F. Vencimiento</th><th>Monto Total</th><th></th></tr></thead><tbody>';
+    cargaMasivaDatos.forEach((f, i) => {
+      html += `<tr>
+        <td style="font-size:11px; max-width:140px;">${f.nombreArchivo}${f.alerta ? `<br><span style="color:#b3261e;">${f.alerta}</span>` : ''}</td>
+        <td><select data-i="${i}" data-campo="proveedorId" class="masivoInput">${opcionesSelect(proveedores, 'razon_social', f.proveedorId, '-- Sin proveedor --')}</select></td>
+        <td><select data-i="${i}" data-campo="categoriaId" class="masivoInput">${opcionesSelect(categorias, 'nombre', f.categoriaId, '-- Sin categoría --')}</select></td>
+        <td><input type="text" data-i="${i}" data-campo="folio" class="masivoInput" value="${f.folio}" style="width:80px;"></td>
+        <td><input type="date" data-i="${i}" data-campo="fechaEmision" class="masivoInput" value="${f.fechaEmision}"></td>
+        <td><input type="date" data-i="${i}" data-campo="fechaVencimiento" class="masivoInput" value="${f.fechaVencimiento}"></td>
+        <td><input type="number" data-i="${i}" data-campo="montoTotal" class="masivoInput" value="${f.montoTotal}" style="width:100px;"></td>
+        <td><button type="button" class="btn small danger" onclick="quitarFilaMasiva(${i})">Quitar</button></td>
+      </tr>`;
+    });
+    html += '</tbody>';
+
+    document.getElementById('tablaCargaMasiva').innerHTML = html;
+    document.getElementById('tablaCargaMasiva').style.display = cargaMasivaDatos.length ? 'table' : 'none';
+    document.getElementById('masivaAcciones').style.display = cargaMasivaDatos.length ? 'flex' : 'none';
+
+    document.querySelectorAll('.masivoInput').forEach(input => {
+      input.addEventListener('change', (e) => {
+        cargaMasivaDatos[e.target.dataset.i][e.target.dataset.campo] = e.target.value;
+      });
+    });
+  }
+
+  window.quitarFilaMasiva = (i) => {
+    cargaMasivaDatos.splice(i, 1);
+    renderTablaCargaMasiva();
+  };
+
+  document.getElementById('cancelarMasivoBtn').addEventListener('click', () => {
+    cargaMasivaDatos = [];
+    document.getElementById('fArchivosMasivo').value = '';
+    renderTablaCargaMasiva();
+    document.getElementById('masivaMsg').className = 'msg';
+  });
+
+  document.getElementById('guardarMasivoBtn').addEventListener('click', async () => {
+    const conMonto = cargaMasivaDatos.filter(f => f.montoTotal);
+    if (conMonto.length === 0) return showMsg('masivaMsg', 'No hay filas con monto total para guardar.', false);
+
+    let guardadas = 0;
+    for (const f of cargaMasivaDatos) {
+      if (!f.montoTotal) continue;
+      const { data: nuevaFactura, error } = await sb.from('facturas').insert({
+        empresa_id: empresaId,
+        proveedor_id: f.proveedorId || null,
+        categoria_id: f.categoriaId || null,
+        folio: f.folio,
+        fecha_emision: f.fechaEmision || null,
+        fecha_vencimiento: f.fechaVencimiento || null,
+        monto_neto: f.montoNeto || 0,
+        iva: f.iva || 0,
+        monto_total: f.montoTotal
+      }).select().single();
+
+      if (error) { console.error(error); continue; }
+
+      const ruta = `${empresaId}/${nuevaFactura.id}_${f.file.name}`;
+      const { error: uploadError } = await sb.storage.from('facturas').upload(ruta, f.file);
+      if (!uploadError) await sb.from('facturas').update({ archivo_url: ruta }).eq('id', nuevaFactura.id);
+
+      guardadas++;
+    }
+
+    showMsg('masivaMsg', `${guardadas} de ${cargaMasivaDatos.length} factura(s) guardada(s).`, true);
+    cargaMasivaDatos = [];
+    document.getElementById('fArchivosMasivo').value = '';
+    renderTablaCargaMasiva();
+    cargarFacturas();
+    cargarResumen();
   });
 
   // ---------- FACTURAS ----------
