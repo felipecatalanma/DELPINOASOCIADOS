@@ -52,6 +52,9 @@
   tr.fila-total-flujo td { font-weight: 700; background: #eaf2ea; color: #2e7d32; }
   tr.fila-saldo td { font-weight: 700; background: #2d3b2d; color: white; }
   tr.fila-seccion td:first-child { font-weight: 700; color: #445044; background: #f0f4f0; text-transform: uppercase; font-size: 11px; letter-spacing: 0.03em; }
+  tr.fila-total td:first-child { background: #f8faf8; }
+  tr.fila-total-flujo td:first-child { background: #eaf2ea; color: #2e7d32; }
+  tr.fila-saldo td:first-child { background: #2d3b2d; color: white; }
 
   table.simple { width: 100%; border-collapse: collapse; background: white; border-radius: 10px; overflow: hidden; border: 1px solid #e2e8e2; margin-bottom: 20px; }
   table.simple th, table.simple td { text-align: left; padding: 9px 12px; font-size: 13px; border-bottom: 1px solid #eef2ee; }
@@ -409,7 +412,7 @@
     html += '</tr>';
 
     html += '<tr class="fila-seccion"><td>Flujo operacional</td>' + semanas.map(() => '<td></td>').join('') + '</tr>';
-    if (Object.keys(ingOperacional).length) html += filaCategorias(ingOperacional) + filaTotal('Total ingresos operacionales', totIngOperacional);
+    html += filaCategorias(ingOperacional) + filaTotal('Total ingresos operacionales', totIngOperacional);
     html += filaCategorias(egresosPorCategoriaSemana);
     html += filaTotal('Total egresos operacionales', totEgrOperacional);
 
