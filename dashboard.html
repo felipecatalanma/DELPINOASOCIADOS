@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sistema Agrícola — Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #f4f6f4;
+    min-height: 100vh;
+  }
+  header {
+    background: #fff;
+    border-bottom: 1px solid #e2e8e2;
+    padding: 14px 28px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  header h1 {
+    font-size: 16px;
+    color: #2d3b2d;
+  }
+  header .user-info {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    font-size: 13px;
+    color: #667066;
+  }
+  header button {
+    background: none;
+    border: 1px solid #d8ded8;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    color: #445044;
+    cursor: pointer;
+  }
+  header button:hover { background: #f0f4f0; }
+
+  .container {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 32px 24px;
+  }
+
+  .empresa-selector {
+    margin-bottom: 28px;
+  }
+  .empresa-selector label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: #445044;
+    margin-bottom: 8px;
+  }
+  .empresa-selector select {
+    width: 100%;
+    max-width: 420px;
+    padding: 10px 12px;
+    border: 1px solid #d8ded8;
+    border-radius: 8px;
+    font-size: 14px;
+    background: white;
+  }
+
+  .modules {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 16px;
+  }
+  .module-card {
+    background: white;
+    border-radius: 10px;
+    padding: 20px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    border: 1px solid #e2e8e2;
+    cursor: pointer;
+  }
+  .module-card:hover { border-color: #4a7c4a; }
+  .module-card.disabled { opacity: 0.5; cursor: not-allowed; }
+  .module-card h3 { font-size: 15px; color: #2d3b2d; margin-bottom: 6px; }
+  .module-card p { font-size: 12px; color: #7a8a7a; }
+
+  .loading { text-align: center; padding: 60px; color: #7a8a7a; font-size: 14px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Sistema Agrícola</h1>
+  <div class="user-info">
+    <span id="userEmail"></span>
+    <button id="logoutBtn">Cerrar sesión</button>
+  </div>
+</header>
+
+<div class="container" id="mainContent" style="display:none;">
+  <div class="empresa-selector">
+    <label for="empresaSelect">Empresa activa</label>
+    <select id="empresaSelect"></select>
+  </div>
+
+  <div class="modules">
+    <div class="module-card" data-module="facturas">
+      <h3>Facturas</h3>
+      <p>Carga, seguimiento de pagos y flujo de caja</p>
+    </div>
+    <div class="module-card" data-module="remuneraciones">
+      <h3>Remuneraciones</h3>
+      <p>Liquidaciones y pagos de sueldos</p>
+    </div>
+    <div class="module-card disabled" data-module="reportes">
+      <h3>Reportes consolidados</h3>
+      <p>Próximamente</p>
+    </div>
+  </div>
+</div>
+
+<div class="loading" id="loadingMsg">Cargando...</div>
+
+<script>
+  const SUPABASE_URL = 'https://fnnbslztdlumkwrxgmns.supabase.co';
+  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZubmJzbHp0ZGx1bWt3cnhnbW5zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ4NDYxNjYsImV4cCI6MjEwMDQyMjE2Nn0.HOSw8d5PAf55yYa4dR-V2LXjfcLKaF92357DAkgayrc';
+
+  const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  const loadingMsg = document.getElementById('loadingMsg');
+  const mainContent = document.getElementById('mainContent');
+  const userEmailEl = document.getElementById('userEmail');
+  const empresaSelect = document.getElementById('empresaSelect');
+
+  async function init() {
+    const { data: { session } } = await supabase.auth.getSession();
+
+    if (!session) {
+      window.location.href = 'login.html';
+      return;
+    }
+
+    userEmailEl.textContent = session.user.email;
+
+    // Traer las empresas a las que este usuario tiene acceso
+    const { data: empresas, error } = await supabase
+      .from('usuario_empresas')
+      .select('rol, empresas ( id, razon_social, nombre_fantasia )')
+      .eq('usuario_id', session.user.id);
+
+    if (error || !empresas || empresas.length === 0) {
+      loadingMsg.textContent = 'No tienes empresas asignadas. Contacta al administrador.';
+      return;
+    }
+
+    empresaSelect.innerHTML = empresas.map(e =>
+      `<option value="${e.empresas.id}">${e.empresas.nombre_fantasia || e.empresas.razon_social} (${e.rol})</option>`
+    ).join('');
+
+    // Restaurar empresa previamente seleccionada si sigue disponible
+    const savedEmpresaId = localStorage.getItem('empresa_activa_id');
+    if (savedEmpresaId && [...empresaSelect.options].some(o => o.value === savedEmpresaId)) {
+      empresaSelect.value = savedEmpresaId;
+    } else {
+      localStorage.setItem('empresa_activa_id', empresaSelect.value);
+    }
+
+    empresaSelect.addEventListener('change', () => {
+      localStorage.setItem('empresa_activa_id', empresaSelect.value);
+    });
+
+    loadingMsg.style.display = 'none';
+    mainContent.style.display = 'block';
+  }
+
+  document.getElementById('logoutBtn').addEventListener('click', async () => {
+    await supabase.auth.signOut();
+    localStorage.removeItem('empresa_activa_id');
+    window.location.href = 'login.html';
+  });
+
+  document.querySelectorAll('.module-card').forEach(card => {
+    card.addEventListener('click', () => {
+      if (card.classList.contains('disabled')) return;
+      const module = card.dataset.module;
+      window.location.href = `${module}.html`;
+    });
+  });
+
+  init();
+</script>
+
+</body>
+</html>
