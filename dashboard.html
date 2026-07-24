@@ -145,7 +145,7 @@
     userEmailEl.textContent = session.user.email;
 
     // Traer las empresas a las que este usuario tiene acceso
-    const { data: empresas, error } = await supabase
+    const { data: empresas, error } = await sb
       .from('usuario_empresas')
       .select('rol, empresas ( id, razon_social, nombre_fantasia )')
       .eq('usuario_id', session.user.id);
