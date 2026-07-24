@@ -6,6 +6,7 @@
 <title>Sistema Agrícola — Facturas</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -110,7 +111,7 @@
     <div class="cards">
       <div class="card warn"><div class="label">Pendiente por pagar</div><div class="value" id="cardPendiente">$0</div></div>
       <div class="card warn"><div class="label">Facturas vencidas</div><div class="value" id="cardVencidas">0</div></div>
-      <div class="card"><div class="label">Pagado este mes</div><div class="value" id="cardPagadoMes">$0</div></div>
+      <div class="card"><div class="label" id="labelPagadoMes">Pagado este mes</div><div class="value" id="cardPagadoMes">$0</div></div>
       <div class="card"><div class="label">Facturas activas</div><div class="value" id="cardTotalFacturas">0</div></div>
     </div>
 
@@ -132,13 +133,18 @@
       <tbody id="listaPagadas"></tbody>
     </table>
 
-    <div class="section-title">Egresos del mes actual por categoría</div>
+    <div class="section-title">Egresos por mes</div>
+    <div style="margin-bottom:14px;">
+      <label>Selecciona el mes a revisar</label>
+      <input type="month" id="resumenMes" style="max-width:200px;">
+    </div>
+
     <table>
       <thead><tr><th>Categoría</th><th>Total pagado</th></tr></thead>
       <tbody id="tablaPorCategoria"></tbody>
     </table>
 
-    <div class="section-title">Egresos del mes actual por proveedor</div>
+    <div class="section-title">Egresos del mes por proveedor</div>
     <table>
       <thead><tr><th>Proveedor</th><th>Total pagado</th></tr></thead>
       <tbody id="tablaPorProveedor"></tbody>
@@ -204,6 +210,17 @@
 
   <!-- PROVEEDORES -->
   <div class="panel" id="panel-proveedores">
+    <div class="form-box">
+      <div class="section-title" style="margin-top:0;">Carga masiva</div>
+      <div class="msg" id="cargaMasivaMsg"></div>
+      <p style="font-size:12px; color:#667066; margin-bottom:10px;">Descarga la plantilla, complétala con tus proveedores y súbela para cargarlos todos de una vez.</p>
+      <div style="display:flex; gap:10px; align-items:end; flex-wrap:wrap;">
+        <button type="button" class="btn secondary" id="descargarPlantillaBtn">Descargar plantilla Excel</button>
+        <div style="flex:1; min-width:200px;"><label>Subir Excel completado</label><input type="file" id="cargaMasivaArchivo" accept=".xlsx,.xls"></div>
+        <button type="button" class="btn" id="cargaMasivaBtn">Cargar proveedores</button>
+      </div>
+    </div>
+
     <div class="form-box">
       <div class="section-title" style="margin-top:0;">Nuevo proveedor</div>
       <div class="msg" id="provMsg"></div>
@@ -370,7 +387,7 @@
 
   // ---------- PROVEEDORES ----------
   async function cargarProveedores() {
-    const { data } = await sb.from('proveedores').select('*').eq('empresa_id', empresaId).order('razon_social');
+    const { data } = await sb.from('proveedores').select('*').order('razon_social');
     proveedores = data || [];
     document.getElementById('tablaProveedores').innerHTML = proveedores.map(p => `
       <tr>
@@ -386,7 +403,6 @@
   document.getElementById('provForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const { error } = await sb.from('proveedores').insert({
-      empresa_id: empresaId,
       rut: document.getElementById('pRut').value,
       razon_social: document.getElementById('pRazon').value,
       giro: document.getElementById('pGiro').value
@@ -403,6 +419,47 @@
     if (error) return alert('No se pudo eliminar: ' + error.message);
     cargarProveedores();
   };
+
+  document.getElementById('descargarPlantillaBtn').addEventListener('click', () => {
+    const datos = [
+      { 'RUT': '12.345.678-9', 'Razón Social': 'Ejemplo Proveedor SPA', 'Giro': 'Venta de insumos agrícolas' }
+    ];
+    const ws = XLSX.utils.json_to_sheet(datos);
+    ws['!cols'] = [{ wch: 16 }, { wch: 35 }, { wch: 35 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Proveedores');
+    XLSX.writeFile(wb, 'plantilla_proveedores.xlsx');
+  });
+
+  document.getElementById('cargaMasivaBtn').addEventListener('click', async () => {
+    const file = document.getElementById('cargaMasivaArchivo').files[0];
+    if (!file) return showMsg('cargaMasivaMsg', 'Selecciona un archivo Excel primero.', false);
+
+    try {
+      const buffer = await file.arrayBuffer();
+      const wb = XLSX.read(buffer, { type: 'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const filas = XLSX.utils.sheet_to_json(ws);
+
+      const nuevos = filas.map(f => ({
+        rut: String(f['RUT'] || '').trim(),
+        razon_social: String(f['Razón Social'] || f['Razon Social'] || '').trim(),
+        giro: String(f['Giro'] || '').trim()
+      })).filter(p => p.razon_social && p.razon_social !== 'Ejemplo Proveedor SPA');
+
+      if (nuevos.length === 0) return showMsg('cargaMasivaMsg', 'No se encontraron filas válidas (revisa que la columna "Razón Social" esté completa).', false);
+
+      const { error } = await sb.from('proveedores').insert(nuevos);
+      if (error) return showMsg('cargaMasivaMsg', 'Error al cargar: ' + error.message, false);
+
+      showMsg('cargaMasivaMsg', `${nuevos.length} proveedor(es) cargado(s) correctamente.`, true);
+      document.getElementById('cargaMasivaArchivo').value = '';
+      cargarProveedores();
+    } catch (err) {
+      showMsg('cargaMasivaMsg', 'No se pudo leer el archivo. Verifica que sea un Excel válido.', false);
+      console.error(err);
+    }
+  });
 
   // ---------- CATEGORIAS ----------
   async function cargarCategorias() {
@@ -789,21 +846,20 @@
   });
 
   // ---------- RESUMEN ----------
+  let resumenFacturasCache = [];
+
   async function cargarResumen() {
     const { data: facturas } = await sb.from('facturas')
       .select('*, categorias_egreso(nombre), proveedores(razon_social), pagos_factura(monto, fecha_pago)')
       .eq('empresa_id', empresaId);
 
-    const hoy = new Date();
-    const hoyStr = hoy.toISOString().slice(0, 10);
-    const mesActual = hoyStr.slice(0, 7);
+    resumenFacturasCache = facturas || [];
 
-    let pendiente = 0, vencidas = 0, pagadoMes = 0, activas = 0;
-    const porCategoria = {};
-    const porProveedor = {};
+    const hoyStr = new Date().toISOString().slice(0, 10);
+    let pendiente = 0, vencidas = 0, activas = 0;
     const listaPorPagar = [], listaVencidas = [], listaPagadas = [];
 
-    (facturas || []).forEach(f => {
+    resumenFacturasCache.forEach(f => {
       const pagado = (f.pagos_factura || []).reduce((s, p) => s + Number(p.monto), 0);
       const saldo = Number(f.monto_total) - pagado;
       const esVencida = f.estado !== 'pagada' && f.fecha_vencimiento && f.fecha_vencimiento < hoyStr;
@@ -816,21 +872,10 @@
         const ultimaFechaPago = (f.pagos_factura || []).map(p => p.fecha_pago).filter(Boolean).sort().slice(-1)[0];
         listaPagadas.push({ folio: f.folio, prov: f.proveedores?.razon_social || '-', cat: f.categorias_egreso?.nombre || '-', total: f.monto_total, fecha: ultimaFechaPago || '-' });
       }
-
-      (f.pagos_factura || []).forEach(p => {
-        if (p.fecha_pago && p.fecha_pago.slice(0, 7) === mesActual) {
-          pagadoMes += Number(p.monto);
-          const cat = f.categorias_egreso?.nombre || 'Sin categoría';
-          const prov = f.proveedores?.razon_social || 'Sin proveedor';
-          porCategoria[cat] = (porCategoria[cat] || 0) + Number(p.monto);
-          porProveedor[prov] = (porProveedor[prov] || 0) + Number(p.monto);
-        }
-      });
     });
 
     document.getElementById('cardPendiente').textContent = fmt(pendiente);
     document.getElementById('cardVencidas').textContent = vencidas;
-    document.getElementById('cardPagadoMes').textContent = fmt(pagadoMes);
     document.getElementById('cardTotalFacturas').textContent = activas;
 
     document.getElementById('listaPorPagar').innerHTML = listaPorPagar
@@ -848,14 +893,43 @@
       .map(f => `<tr><td>${f.folio || '-'}</td><td>${f.prov}</td><td>${f.cat}</td><td>${fmt(f.total)}</td><td>${f.fecha}</td></tr>`).join('')
       || '<tr><td colspan="5">Sin facturas pagadas aún</td></tr>';
 
+    renderEgresosPorMes();
+  }
+
+  function renderEgresosPorMes() {
+    const mesSeleccionado = document.getElementById('resumenMes').value; // formato AAAA-MM
+    let pagadoMes = 0;
+    const porCategoria = {};
+    const porProveedor = {};
+
+    resumenFacturasCache.forEach(f => {
+      (f.pagos_factura || []).forEach(p => {
+        if (p.fecha_pago && p.fecha_pago.slice(0, 7) === mesSeleccionado) {
+          pagadoMes += Number(p.monto);
+          const cat = f.categorias_egreso?.nombre || 'Sin categoría';
+          const prov = f.proveedores?.razon_social || 'Sin proveedor';
+          porCategoria[cat] = (porCategoria[cat] || 0) + Number(p.monto);
+          porProveedor[prov] = (porProveedor[prov] || 0) + Number(p.monto);
+        }
+      });
+    });
+
+    const [anio, mesNum] = mesSeleccionado.split('-');
+    const nombresMeses = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+    document.getElementById('labelPagadoMes').textContent = mesNum ? `Pagado en ${nombresMeses[parseInt(mesNum, 10) - 1]} ${anio}` : 'Pagado en el mes';
+    document.getElementById('cardPagadoMes').textContent = fmt(pagadoMes);
+
     document.getElementById('tablaPorCategoria').innerHTML =
       Object.entries(porCategoria).sort((a, b) => b[1] - a[1]).map(([k, v]) => `<tr><td>${k}</td><td>${fmt(v)}</td></tr>`).join('')
-      || '<tr><td colspan="2">Sin pagos este mes</td></tr>';
+      || '<tr><td colspan="2">Sin pagos ese mes</td></tr>';
 
     document.getElementById('tablaPorProveedor').innerHTML =
       Object.entries(porProveedor).sort((a, b) => b[1] - a[1]).map(([k, v]) => `<tr><td>${k}</td><td>${fmt(v)}</td></tr>`).join('')
-      || '<tr><td colspan="2">Sin pagos este mes</td></tr>';
+      || '<tr><td colspan="2">Sin pagos ese mes</td></tr>';
   }
+
+  document.getElementById('resumenMes').value = new Date().toISOString().slice(0, 7);
+  document.getElementById('resumenMes').addEventListener('change', renderEgresosPorMes);
 
   init();
 </script>
