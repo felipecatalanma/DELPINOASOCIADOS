@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Sistema Agrícola — Facturas</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -131,6 +132,13 @@
     <div class="form-box">
       <div class="section-title" style="margin-top:0;">Nueva factura</div>
       <div class="msg" id="facturaMsg"></div>
+
+      <div style="margin-bottom:16px; padding:14px; background:#f8faf8; border:1px dashed #c8d4c8; border-radius:8px;">
+        <label>PDF de la factura (opcional — autocompleta los campos)</label>
+        <input type="file" id="fArchivo" accept="application/pdf">
+        <div id="extraccionMsg" style="font-size:12px; color:#667066; margin-top:8px;"></div>
+      </div>
+
       <form id="facturaForm">
         <div class="form-grid">
           <div><label>Proveedor</label><select id="fProveedor" required></select></div>
@@ -236,6 +244,11 @@
     const { data: empresa } = await sb.from('empresas').select('razon_social, nombre_fantasia').eq('id', empresaId).single();
     if (empresa) document.getElementById('empresaBadge').textContent = empresa.nombre_fantasia || empresa.razon_social;
 
+    const { data: todasEmpresas } = await sb.from('empresas').select('id, rut, razon_social, nombre_fantasia');
+    empresasRuts = (todasEmpresas || []).map(e => ({
+      normalizado: normalizarRut(e.rut), id: e.id, nombre: e.nombre_fantasia || e.razon_social
+    }));
+
     await Promise.all([cargarProveedores(), cargarCategorias()]);
     await cargarFacturas();
     await cargarResumen();
@@ -325,6 +338,148 @@
     cargarCategorias();
   };
 
+  // ---------- EXTRACCIÓN DE DATOS DESDE PDF ----------
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+  let archivoSeleccionado = null;
+  let empresasRuts = []; // [{ normalizado, id, nombre }]
+  const FECHA_PATTERN = '(?:\\d{1,2}\\s*/\\s*\\d{1,2}\\s*/\\s*\\d{4}|\\d{1,2}\\s+de\\s+[A-Za-zñÑ]+\\s+del?\\s+\\d{4}|\\d{1,2}\\s+[A-Za-zñÑ]{3,4}\\.?\\s+\\d{4})';
+  const MESES = {enero:1,ene:1,febrero:2,feb:2,marzo:3,mar:3,abril:4,abr:4,mayo:5,may:5,junio:6,jun:6,julio:7,jul:7,agosto:8,ago:8,septiembre:9,setiembre:9,sep:9,sept:9,octubre:10,oct:10,noviembre:11,nov:11,diciembre:12,dic:12};
+
+  function pad(n) { return String(n).padStart(2, '0'); }
+
+  function parseFechaTexto(str) {
+    if (!str) return null;
+    str = str.trim();
+    let m = str.match(/^(\d{1,2})\s*\/\s*(\d{1,2})\s*\/\s*(\d{4})$/);
+    if (m) return `${m[3]}-${pad(m[2])}-${pad(m[1])}`;
+    m = str.match(/^(\d{1,2})\s+de\s+([A-Za-zñÑ]+)\s+del?\s+(\d{4})$/i);
+    if (m) { const mes = MESES[m[2].toLowerCase()]; if (mes) return `${m[3]}-${pad(mes)}-${pad(m[1])}`; }
+    m = str.match(/^(\d{1,2})\s+([A-Za-zñÑ]{3,4})\.?\s+(\d{4})$/i);
+    if (m) { const mes = MESES[m[2].toLowerCase().replace('.', '')]; if (mes) return `${m[3]}-${pad(mes)}-${pad(m[1])}`; }
+    return null;
+  }
+
+  function buscarMonto(texto, labels) {
+    for (const label of labels) {
+      const re = new RegExp(label + '[\\s\\S]{0,25}?\\$\\s*([\\d.]+)', 'i');
+      const m = texto.match(re);
+      if (m) return parseInt(m[1].replace(/\./g, ''), 10);
+    }
+    return null;
+  }
+
+  function buscarFechaSimple(texto, label, ventanaLen) {
+    const idx = texto.search(new RegExp(label, 'i'));
+    if (idx === -1) return null;
+    const ventana = texto.substring(idx, idx + ventanaLen);
+    const m = ventana.match(new RegExp(FECHA_PATTERN, 'i'));
+    return m ? parseFechaTexto(m[0]) : null;
+  }
+
+  function buscarFechaVencimiento(texto, fechaEmision) {
+    const idx = texto.search(/Fecha\s*Vencimiento\s*:?/i);
+    if (idx === -1) return null;
+    const ventana = texto.substring(idx, idx + 90);
+    const dateRe = new RegExp(FECHA_PATTERN, 'gi');
+    const candidatos = [];
+    let m;
+    while ((m = dateRe.exec(ventana)) !== null) candidatos.push(parseFechaTexto(m[0]));
+    const distintas = candidatos.filter(c => c && c !== fechaEmision);
+    return distintas[0] || candidatos[0] || null;
+  }
+
+  function extraerDatosFactura(textoOriginal) {
+    const texto = textoOriginal.replace(/\s+/g, ' ');
+    const resultado = {};
+
+    let m = texto.match(/N[°ºo]\s*FACTURA\s*[:.]?\s*([\d.]+)/i);
+    if (!m) m = texto.match(/FACTURA\s+ELECTR[OÓ]NICA[\s\S]{0,15}?N[°ºo]\s*([\d.]+)/i);
+    resultado.folio = m ? m[1].replace(/\./g, '') : '';
+
+    resultado.montoNeto = buscarMonto(texto, ['MONTO\\s*NETO', 'Monto\\s*Neto']);
+    resultado.iva = buscarMonto(texto, ['I\\.?V\\.?A\\.?']);
+    resultado.montoTotal = buscarMonto(texto, ['TOTAL\\s*A\\s*PAGAR', 'Total\\s*Pagar', '\\bTOTAL\\b']);
+
+    resultado.fechaEmision = buscarFechaSimple(texto, 'Fecha\\s*Emisi[oó]n\\s*:?', 90);
+    resultado.fechaVencimiento = buscarFechaVencimiento(texto, resultado.fechaEmision);
+
+    const rutRe = /(\d{1,2}\.\d{3}\.\d{3})\s*-\s*([\dkK])/g;
+    const ruts = [];
+    let rm;
+    while ((rm = rutRe.exec(texto)) !== null) {
+      const normalizado = (rm[1] + rm[2]).replace(/\./g, '').toUpperCase();
+      const display = rm[1] + '-' + rm[2].toUpperCase();
+      if (!ruts.find(r => r.normalizado === normalizado)) ruts.push({ normalizado, display });
+    }
+    resultado.ruts = ruts;
+
+    return resultado;
+  }
+
+  function normalizarRut(rut) {
+    return (rut || '').replace(/[.\s-]/g, '').toUpperCase();
+  }
+
+  document.getElementById('fArchivo').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    const msgEl = document.getElementById('extraccionMsg');
+    if (!file) return;
+    archivoSeleccionado = file;
+    msgEl.textContent = 'Leyendo PDF...';
+
+    try {
+      const buffer = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+      let textoCompleto = '';
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        textoCompleto += content.items.map(it => it.str).join(' ') + ' ';
+      }
+
+      const datos = extraerDatosFactura(textoCompleto);
+
+      if (datos.folio) document.getElementById('fFolio').value = datos.folio;
+      if (datos.fechaEmision) document.getElementById('fFechaEmision').value = datos.fechaEmision;
+      if (datos.fechaVencimiento) document.getElementById('fFechaVenc').value = datos.fechaVencimiento;
+      if (datos.montoNeto != null) document.getElementById('fMontoNeto').value = datos.montoNeto;
+      if (datos.iva != null) document.getElementById('fIva').value = datos.iva;
+      if (datos.montoTotal != null) document.getElementById('fMontoTotal').value = datos.montoTotal;
+
+      // Detectar RUT del proveedor (el que no coincide con ninguna de tus empresas)
+      const rutProveedor = (datos.ruts || []).find(r => !empresasRuts.find(e => e.normalizado === r.normalizado));
+      const rutEmpresaDetectada = (datos.ruts || []).find(r => empresasRuts.find(e => e.normalizado === r.normalizado));
+
+      let mensajes = [];
+
+      if (rutEmpresaDetectada) {
+        const empresaMatch = empresasRuts.find(e => e.normalizado === rutEmpresaDetectada.normalizado);
+        if (empresaMatch && empresaMatch.id !== empresaId) {
+          mensajes.push(`⚠️ Esta factura parece ser de "${empresaMatch.nombre}", pero tienes seleccionada otra empresa activa. Verifica antes de guardar.`);
+        }
+      }
+
+      if (rutProveedor) {
+        const provExistente = proveedores.find(p => normalizarRut(p.rut) === rutProveedor.normalizado);
+        if (provExistente) {
+          document.getElementById('fProveedor').value = provExistente.id;
+          mensajes.push(`✓ Proveedor detectado y seleccionado: ${provExistente.razon_social}.`);
+        } else {
+          mensajes.push(`Proveedor con RUT ${rutProveedor.display} no está registrado aún. Créalo en la pestaña "Proveedores" y luego selecciónalo aquí.`);
+        }
+      }
+
+      if (!datos.fechaVencimiento) mensajes.push('No se detectó fecha de vencimiento — complétala manualmente.');
+      if (mensajes.length === 0) mensajes.push('Datos extraídos. Revisa los campos antes de guardar.');
+
+      msgEl.innerHTML = mensajes.join('<br>');
+    } catch (err) {
+      msgEl.textContent = 'No se pudo leer el PDF automáticamente. Completa los campos manualmente.';
+      console.error(err);
+    }
+  });
+
   // ---------- FACTURAS ----------
   document.getElementById('fMontoNeto').addEventListener('input', autocompletarTotal);
   document.getElementById('fIva').addEventListener('input', autocompletarTotal);
@@ -357,6 +512,7 @@
         <td>${fmt(saldo)}</td>
         <td><span class="badge ${f.estado}">${f.estado}</span></td>
         <td class="row-actions">
+          ${f.archivo_url ? `<button class="btn small secondary" onclick="verPdf('${f.archivo_url}')">Ver PDF</button>` : ''}
           ${f.estado !== 'pagada' ? `<button class="btn small secondary" onclick="abrirPago('${f.id}', ${saldo})">Registrar pago</button>` : ''}
         </td>
       </tr>`;
@@ -365,7 +521,7 @@
 
   document.getElementById('facturaForm').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const { error } = await sb.from('facturas').insert({
+    const { data: nuevaFactura, error } = await sb.from('facturas').insert({
       empresa_id: empresaId,
       proveedor_id: document.getElementById('fProveedor').value || null,
       categoria_id: document.getElementById('fCategoria').value || null,
@@ -376,13 +532,33 @@
       iva: document.getElementById('fIva').value || 0,
       monto_total: document.getElementById('fMontoTotal').value,
       observaciones: document.getElementById('fObs').value
-    });
+    }).select().single();
+
     if (error) return showMsg('facturaMsg', 'Error: ' + error.message, false);
+
+    if (archivoSeleccionado) {
+      const ruta = `${empresaId}/${nuevaFactura.id}_${archivoSeleccionado.name}`;
+      const { error: uploadError } = await sb.storage.from('facturas').upload(ruta, archivoSeleccionado);
+      if (!uploadError) {
+        await sb.from('facturas').update({ archivo_url: ruta }).eq('id', nuevaFactura.id);
+      } else {
+        showMsg('facturaMsg', 'Factura guardada, pero el PDF no se pudo subir: ' + uploadError.message, false);
+      }
+    }
+
     showMsg('facturaMsg', 'Factura guardada.', true);
     e.target.reset();
+    document.getElementById('extraccionMsg').textContent = '';
+    archivoSeleccionado = null;
     cargarFacturas();
     cargarResumen();
   });
+
+  window.verPdf = async (ruta) => {
+    const { data, error } = await sb.storage.from('facturas').createSignedUrl(ruta, 300);
+    if (error) return alert('No se pudo abrir el PDF: ' + error.message);
+    window.open(data.signedUrl, '_blank');
+  };
 
   window.abrirPago = async (facturaId, saldo) => {
     const monto = prompt(`Saldo pendiente: ${fmt(saldo)}\n\nMonto a pagar:`, saldo);
