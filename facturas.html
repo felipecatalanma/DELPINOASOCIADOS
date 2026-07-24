@@ -114,6 +114,24 @@
       <div class="card"><div class="label">Facturas activas</div><div class="value" id="cardTotalFacturas">0</div></div>
     </div>
 
+    <div class="section-title">Facturas por pagar (no vencidas)</div>
+    <table>
+      <thead><tr><th>Folio</th><th>Proveedor</th><th>Categoría</th><th>Vencimiento</th><th>Saldo</th></tr></thead>
+      <tbody id="listaPorPagar"></tbody>
+    </table>
+
+    <div class="section-title">Facturas vencidas</div>
+    <table>
+      <thead><tr><th>Folio</th><th>Proveedor</th><th>Categoría</th><th>Vencimiento</th><th>Saldo</th></tr></thead>
+      <tbody id="listaVencidas"></tbody>
+    </table>
+
+    <div class="section-title">Facturas pagadas</div>
+    <table>
+      <thead><tr><th>Folio</th><th>Proveedor</th><th>Categoría</th><th>Total</th><th>Última fecha de pago</th></tr></thead>
+      <tbody id="listaPagadas"></tbody>
+    </table>
+
     <div class="section-title">Egresos del mes actual por categoría</div>
     <table>
       <thead><tr><th>Categoría</th><th>Total pagado</th></tr></thead>
@@ -156,6 +174,26 @@
     </div>
 
     <div class="section-title">Listado de facturas</div>
+    <div class="form-box">
+      <div class="form-grid">
+        <div><label>Proveedor</label><select id="filtroProveedor"><option value="">Todos</option></select></div>
+        <div><label>Estado</label>
+          <select id="filtroEstado">
+            <option value="">Todos</option>
+            <option value="pendiente">Pendiente</option>
+            <option value="parcial">Parcial</option>
+            <option value="pagada">Pagada</option>
+            <option value="vencida">Vencida</option>
+          </select>
+        </div>
+        <div><label>Vencimiento desde</label><input type="date" id="filtroFechaDesde"></div>
+        <div><label>Vencimiento hasta</label><input type="date" id="filtroFechaHasta"></div>
+        <div><label>Monto mínimo</label><input type="number" id="filtroMontoMin"></div>
+        <div><label>Monto máximo</label><input type="number" id="filtroMontoMax"></div>
+      </div>
+      <button type="button" class="btn secondary small" id="limpiarFiltros">Limpiar filtros</button>
+    </div>
+
     <table>
       <thead>
         <tr><th>Folio</th><th>Proveedor</th><th>Categoría</th><th>Vencimiento</th><th>Total</th><th>Saldo</th><th>Estado</th><th></th></tr>
@@ -242,6 +280,35 @@
   </div>
 </div>
 
+<!-- MODAL EDITAR FACTURA -->
+<div id="editModalOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); align-items:center; justify-content:center; z-index:100;">
+  <div style="background:white; border-radius:10px; padding:24px; width:100%; max-width:560px; max-height:90vh; overflow-y:auto;">
+    <h3 style="font-size:15px; margin-bottom:16px;">Editar factura</h3>
+    <div class="msg" id="editMsg"></div>
+    <form id="editForm">
+      <input type="hidden" id="eId">
+      <div class="form-grid">
+        <div><label>Proveedor</label><select id="eProveedor" required></select></div>
+        <div><label>Categoría</label><select id="eCategoria" required></select></div>
+        <div><label>Folio</label><input type="text" id="eFolio"></div>
+        <div><label>Fecha emisión</label><input type="date" id="eFechaEmision"></div>
+        <div><label>Fecha vencimiento</label><input type="date" id="eFechaVenc"></div>
+        <div><label>Monto neto</label><input type="number" step="1" id="eMontoNeto"></div>
+        <div><label>IVA</label><input type="number" step="1" id="eIva"></div>
+        <div><label>Monto total *</label><input type="number" step="1" id="eMontoTotal" required></div>
+      </div>
+      <div style="margin-bottom:14px;"><label>Observaciones</label><textarea id="eObs"></textarea></div>
+      <div style="display:flex; gap:8px; justify-content:space-between;">
+        <button type="button" class="btn danger" id="eliminarFacturaBtn">Eliminar factura</button>
+        <div style="display:flex; gap:8px;">
+          <button type="button" class="btn secondary" id="editCancelar">Cancelar</button>
+          <button type="submit" class="btn">Guardar cambios</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
 <script>
   const SUPABASE_URL = 'https://fnnbslztdlumkwrxgmns.supabase.co';
   const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZubmJzbHp0ZGx1bWt3cnhnbW5zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ4NDYxNjYsImV4cCI6MjEwMDQyMjE2Nn0.HOSw8d5PAf55yYa4dR-V2LXjfcLKaF92357DAkgayrc';
@@ -250,6 +317,7 @@
   let empresaId = null;
   let proveedores = [];
   let categorias = [];
+  let facturasCache = [];
 
   const loadingMsg = document.getElementById('loadingMsg');
   const mainContent = document.getElementById('mainContent');
@@ -310,6 +378,8 @@
         <td><button class="btn small danger" onclick="borrarProveedor('${p.id}')">Eliminar</button></td>
       </tr>`).join('') || '<tr><td colspan="4">Sin proveedores aún</td></tr>';
     document.getElementById('fProveedor').innerHTML = '<option value="">-- Selecciona --</option>' +
+      proveedores.map(p => `<option value="${p.id}">${p.razon_social}</option>`).join('');
+    document.getElementById('filtroProveedor').innerHTML = '<option value="">Todos</option>' +
       proveedores.map(p => `<option value="${p.id}">${p.razon_social}</option>`).join('');
   }
 
@@ -524,29 +594,115 @@
       .eq('empresa_id', empresaId)
       .order('fecha_vencimiento', { ascending: true });
 
-    const facturas = data || [];
-    const hoy = new Date().toISOString().slice(0, 10);
+    facturasCache = data || [];
+    renderFacturas();
+  }
 
-    document.getElementById('tablaFacturas').innerHTML = facturas.map(f => {
+  function renderFacturas() {
+    const hoy = new Date().toISOString().slice(0, 10);
+    const provFiltro = document.getElementById('filtroProveedor').value;
+    const estadoFiltro = document.getElementById('filtroEstado').value;
+    const desde = document.getElementById('filtroFechaDesde').value;
+    const hasta = document.getElementById('filtroFechaHasta').value;
+    const montoMin = document.getElementById('filtroMontoMin').value;
+    const montoMax = document.getElementById('filtroMontoMax').value;
+
+    let facturas = facturasCache.map(f => {
       const pagado = (f.pagos_factura || []).reduce((s, p) => s + Number(p.monto), 0);
       const saldo = Number(f.monto_total) - pagado;
       const vencida = f.estado !== 'pagada' && f.fecha_vencimiento && f.fecha_vencimiento < hoy;
-      return `
+      return { ...f, saldo, vencida };
+    });
+
+    if (provFiltro) facturas = facturas.filter(f => f.proveedor_id === provFiltro);
+    if (estadoFiltro === 'vencida') facturas = facturas.filter(f => f.vencida);
+    else if (estadoFiltro) facturas = facturas.filter(f => f.estado === estadoFiltro);
+    if (desde) facturas = facturas.filter(f => f.fecha_vencimiento && f.fecha_vencimiento >= desde);
+    if (hasta) facturas = facturas.filter(f => f.fecha_vencimiento && f.fecha_vencimiento <= hasta);
+    if (montoMin) facturas = facturas.filter(f => Number(f.monto_total) >= Number(montoMin));
+    if (montoMax) facturas = facturas.filter(f => Number(f.monto_total) <= Number(montoMax));
+
+    document.getElementById('tablaFacturas').innerHTML = facturas.map(f => `
       <tr>
         <td>${f.folio || '-'}</td>
         <td>${f.proveedores?.razon_social || '-'}</td>
         <td>${f.categorias_egreso?.nombre || '-'}</td>
-        <td style="${vencida ? 'color:#b3261e;font-weight:600;' : ''}">${f.fecha_vencimiento || '-'}</td>
+        <td style="${f.vencida ? 'color:#b3261e;font-weight:600;' : ''}">${f.fecha_vencimiento || '-'}</td>
         <td>${fmt(f.monto_total)}</td>
-        <td>${fmt(saldo)}</td>
+        <td>${fmt(f.saldo)}</td>
         <td><span class="badge ${f.estado}">${f.estado}</span></td>
         <td class="row-actions">
+          <button class="btn small secondary" onclick="abrirEditar('${f.id}')">Editar</button>
           ${f.archivo_url ? `<button class="btn small secondary" onclick="verPdf('${f.archivo_url}')">Ver PDF</button>` : ''}
-          ${f.estado !== 'pagada' ? `<button class="btn small secondary" onclick="abrirPago('${f.id}', ${saldo})">Registrar pago</button>` : ''}
+          ${f.estado !== 'pagada' ? `<button class="btn small secondary" onclick="abrirPago('${f.id}', ${f.saldo})">Registrar pago</button>` : ''}
         </td>
-      </tr>`;
-    }).join('') || '<tr><td colspan="8">Sin facturas aún</td></tr>';
+      </tr>`).join('') || '<tr><td colspan="8">Sin facturas para los filtros aplicados</td></tr>';
   }
+
+  ['filtroProveedor', 'filtroEstado', 'filtroFechaDesde', 'filtroFechaHasta', 'filtroMontoMin', 'filtroMontoMax'].forEach(id => {
+    document.getElementById(id).addEventListener('input', renderFacturas);
+  });
+  document.getElementById('limpiarFiltros').addEventListener('click', () => {
+    ['filtroProveedor', 'filtroEstado', 'filtroFechaDesde', 'filtroFechaHasta', 'filtroMontoMin', 'filtroMontoMax'].forEach(id => {
+      document.getElementById(id).value = '';
+    });
+    renderFacturas();
+  });
+
+  // ---------- EDITAR / ELIMINAR FACTURA ----------
+  window.abrirEditar = (facturaId) => {
+    const f = facturasCache.find(x => x.id === facturaId);
+    if (!f) return;
+    document.getElementById('eId').value = f.id;
+    document.getElementById('eProveedor').innerHTML = document.getElementById('fProveedor').innerHTML;
+    document.getElementById('eCategoria').innerHTML = document.getElementById('fCategoria').innerHTML;
+    document.getElementById('eProveedor').value = f.proveedor_id || '';
+    document.getElementById('eCategoria').value = f.categoria_id || '';
+    document.getElementById('eFolio').value = f.folio || '';
+    document.getElementById('eFechaEmision').value = f.fecha_emision || '';
+    document.getElementById('eFechaVenc').value = f.fecha_vencimiento || '';
+    document.getElementById('eMontoNeto').value = f.monto_neto || '';
+    document.getElementById('eIva').value = f.iva || '';
+    document.getElementById('eMontoTotal').value = f.monto_total || '';
+    document.getElementById('eObs').value = f.observaciones || '';
+    document.getElementById('editMsg').className = 'msg';
+    document.getElementById('editModalOverlay').style.display = 'flex';
+  };
+
+  document.getElementById('editCancelar').addEventListener('click', () => {
+    document.getElementById('editModalOverlay').style.display = 'none';
+  });
+
+  document.getElementById('editForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const id = document.getElementById('eId').value;
+    const { error } = await sb.from('facturas').update({
+      proveedor_id: document.getElementById('eProveedor').value || null,
+      categoria_id: document.getElementById('eCategoria').value || null,
+      folio: document.getElementById('eFolio').value,
+      fecha_emision: document.getElementById('eFechaEmision').value || null,
+      fecha_vencimiento: document.getElementById('eFechaVenc').value || null,
+      monto_neto: document.getElementById('eMontoNeto').value || 0,
+      iva: document.getElementById('eIva').value || 0,
+      monto_total: document.getElementById('eMontoTotal').value,
+      observaciones: document.getElementById('eObs').value
+    }).eq('id', id);
+
+    if (error) return showMsg('editMsg', 'Error: ' + error.message, false);
+    document.getElementById('editModalOverlay').style.display = 'none';
+    cargarFacturas();
+    cargarResumen();
+  });
+
+  document.getElementById('eliminarFacturaBtn').addEventListener('click', async () => {
+    const id = document.getElementById('eId').value;
+    if (!confirm('¿Eliminar esta factura y todos sus pagos registrados? Esta acción no se puede deshacer.')) return;
+    const { error } = await sb.from('facturas').delete().eq('id', id);
+    if (error) return alert('No se pudo eliminar: ' + error.message);
+    document.getElementById('editModalOverlay').style.display = 'none';
+    cargarFacturas();
+    cargarResumen();
+  });
 
   document.getElementById('facturaForm').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -645,12 +801,21 @@
     let pendiente = 0, vencidas = 0, pagadoMes = 0, activas = 0;
     const porCategoria = {};
     const porProveedor = {};
+    const listaPorPagar = [], listaVencidas = [], listaPagadas = [];
 
     (facturas || []).forEach(f => {
       const pagado = (f.pagos_factura || []).reduce((s, p) => s + Number(p.monto), 0);
       const saldo = Number(f.monto_total) - pagado;
-      if (f.estado !== 'pagada') { pendiente += saldo; activas++; }
-      if (f.estado !== 'pagada' && f.fecha_vencimiento && f.fecha_vencimiento < hoyStr) vencidas++;
+      const esVencida = f.estado !== 'pagada' && f.fecha_vencimiento && f.fecha_vencimiento < hoyStr;
+
+      if (f.estado !== 'pagada') {
+        pendiente += saldo; activas++;
+        const fila = { folio: f.folio, prov: f.proveedores?.razon_social || '-', cat: f.categorias_egreso?.nombre || '-', venc: f.fecha_vencimiento || '-', saldo };
+        if (esVencida) { vencidas++; listaVencidas.push(fila); } else { listaPorPagar.push(fila); }
+      } else {
+        const ultimaFechaPago = (f.pagos_factura || []).map(p => p.fecha_pago).filter(Boolean).sort().slice(-1)[0];
+        listaPagadas.push({ folio: f.folio, prov: f.proveedores?.razon_social || '-', cat: f.categorias_egreso?.nombre || '-', total: f.monto_total, fecha: ultimaFechaPago || '-' });
+      }
 
       (f.pagos_factura || []).forEach(p => {
         if (p.fecha_pago && p.fecha_pago.slice(0, 7) === mesActual) {
@@ -667,6 +832,21 @@
     document.getElementById('cardVencidas').textContent = vencidas;
     document.getElementById('cardPagadoMes').textContent = fmt(pagadoMes);
     document.getElementById('cardTotalFacturas').textContent = activas;
+
+    document.getElementById('listaPorPagar').innerHTML = listaPorPagar
+      .sort((a, b) => (a.venc || '').localeCompare(b.venc || ''))
+      .map(f => `<tr><td>${f.folio || '-'}</td><td>${f.prov}</td><td>${f.cat}</td><td>${f.venc}</td><td>${fmt(f.saldo)}</td></tr>`).join('')
+      || '<tr><td colspan="5">Sin facturas por pagar</td></tr>';
+
+    document.getElementById('listaVencidas').innerHTML = listaVencidas
+      .sort((a, b) => (a.venc || '').localeCompare(b.venc || ''))
+      .map(f => `<tr><td>${f.folio || '-'}</td><td>${f.prov}</td><td>${f.cat}</td><td style="color:#b3261e;font-weight:600;">${f.venc}</td><td>${fmt(f.saldo)}</td></tr>`).join('')
+      || '<tr><td colspan="5">Sin facturas vencidas</td></tr>';
+
+    document.getElementById('listaPagadas').innerHTML = listaPagadas
+      .sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''))
+      .map(f => `<tr><td>${f.folio || '-'}</td><td>${f.prov}</td><td>${f.cat}</td><td>${fmt(f.total)}</td><td>${f.fecha}</td></tr>`).join('')
+      || '<tr><td colspan="5">Sin facturas pagadas aún</td></tr>';
 
     document.getElementById('tablaPorCategoria').innerHTML =
       Object.entries(porCategoria).sort((a, b) => b[1] - a[1]).map(([k, v]) => `<tr><td>${k}</td><td>${fmt(v)}</td></tr>`).join('')
