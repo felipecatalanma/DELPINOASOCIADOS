@@ -97,14 +97,14 @@
   const SUPABASE_URL = 'https://fnnbslztdlumkwrxgmns.supabase.co';
   const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZubmJzbHp0ZGx1bWt3cnhnbW5zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ4NDYxNjYsImV4cCI6MjEwMDQyMjE2Nn0.HOSw8d5PAf55yYa4dR-V2LXjfcLKaF92357DAkgayrc';
 
-  const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
   const form = document.getElementById('loginForm');
   const errorBox = document.getElementById('errorBox');
   const submitBtn = document.getElementById('submitBtn');
 
   // Si ya hay sesión activa, saltar directo al dashboard
-  supabase.auth.getSession().then(({ data }) => {
+  sb.auth.getSession().then(({ data }) => {
     if (data.session) window.location.href = 'dashboard.html';
   });
 
@@ -117,7 +117,7 @@
     const email = document.getElementById('email').value.trim();
     const password = document.getElementById('password').value;
 
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await sb.auth.signInWithPassword({ email, password });
 
     if (error) {
       errorBox.textContent = 'Correo o contraseña incorrectos.';
