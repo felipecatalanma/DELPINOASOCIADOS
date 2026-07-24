@@ -79,6 +79,7 @@
   <div class="tabs">
     <div class="tab active" data-panel="calendario">Calendario</div>
     <div class="tab" data-panel="bancos">Bancos</div>
+    <div class="tab" data-panel="consolidado">Consolidado</div>
   </div>
 
   <!-- CALENDARIO -->
@@ -144,6 +145,14 @@
 
     <div class="section-title">Cuentas e historial</div>
     <div id="bancosContainer"></div>
+  </div>
+
+  <!-- CONSOLIDADO -->
+  <div class="panel" id="panel-consolidado">
+    <p style="font-size:12px; color:#7a8a7a; margin-bottom:16px;">Saldo disponible por banco, cruzando las 5 empresas (usa el saldo más reciente registrado de cada cuenta).</p>
+    <div class="tabla-scroll">
+      <table class="calendario" id="tablaConsolidado"></table>
+    </div>
   </div>
 
 </div>
@@ -224,8 +233,67 @@
       document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
       tab.classList.add('active');
       document.getElementById('panel-' + tab.dataset.panel).classList.add('active');
+      if (tab.dataset.panel === 'consolidado') cargarConsolidado();
     });
   });
+
+  // ---------- CONSOLIDADO (cruza las 5 empresas) ----------
+  async function cargarConsolidado() {
+    const { data: empresas } = await sb.from('empresas').select('id, razon_social, nombre_fantasia').order('razon_social');
+    const { data: todosBancos } = await sb.from('bancos').select('id, nombre, empresa_id');
+
+    const bancoIds = (todosBancos || []).map(b => b.id);
+    const saldosPorBanco = {};
+    if (bancoIds.length) {
+      const { data: saldos } = await sb.from('saldos_bancarios')
+        .select('banco_id, saldo, cheques_no_cobrados, fecha')
+        .in('banco_id', bancoIds)
+        .order('fecha', { ascending: false });
+      (saldos || []).forEach(s => { if (!saldosPorBanco[s.banco_id]) saldosPorBanco[s.banco_id] = s; });
+    }
+
+    const nombresBancos = [...new Set((todosBancos || []).map(b => b.nombre))].sort();
+
+    let html = '<thead><tr><th>Banco</th>';
+    (empresas || []).forEach(e => html += `<th colspan="3">${e.nombre_fantasia || e.razon_social}</th>`);
+    html += '<th>Saldo Disponible<br>Consolidado</th></tr><tr><th></th>';
+    (empresas || []).forEach(() => html += '<th>Saldo Banco</th><th>Cheques no cobrados</th><th>Saldo Disponible</th>');
+    html += '<th></th></tr></thead><tbody>';
+
+    const totalesPorEmpresa = {};
+    (empresas || []).forEach(e => totalesPorEmpresa[e.id] = { saldo: 0, cheques: 0, disp: 0 });
+    let totalConsolidado = 0;
+
+    nombresBancos.forEach(nombre => {
+      html += `<tr><td>${nombre}</td>`;
+      let totalFilaDisp = 0;
+      (empresas || []).forEach(e => {
+        const banco = (todosBancos || []).find(b => b.nombre === nombre && b.empresa_id === e.id);
+        const s = banco ? saldosPorBanco[banco.id] : null;
+        if (s) {
+          const disp = Number(s.saldo) - Number(s.cheques_no_cobrados || 0);
+          html += `<td>${fmt(s.saldo)}</td><td>${fmt(s.cheques_no_cobrados)}</td><td>${fmt(disp)}</td>`;
+          totalesPorEmpresa[e.id].saldo += Number(s.saldo);
+          totalesPorEmpresa[e.id].cheques += Number(s.cheques_no_cobrados || 0);
+          totalesPorEmpresa[e.id].disp += disp;
+          totalFilaDisp += disp;
+        } else {
+          html += '<td>-</td><td>-</td><td>-</td>';
+        }
+      });
+      html += `<td style="font-weight:700;">${fmt(totalFilaDisp)}</td></tr>`;
+      totalConsolidado += totalFilaDisp;
+    });
+
+    html += '<tr class="fila-total"><td>TOTAL</td>';
+    (empresas || []).forEach(e => {
+      const t = totalesPorEmpresa[e.id];
+      html += `<td>${fmt(t.saldo)}</td><td>${fmt(t.cheques)}</td><td>${fmt(t.disp)}</td>`;
+    });
+    html += `<td>${fmt(totalConsolidado)}</td></tr></tbody>`;
+
+    document.getElementById('tablaConsolidado').innerHTML = html;
+  }
 
   // ---------- CALENDARIO ----------
   async function cargarCalendario() {
@@ -237,16 +305,16 @@
       sb.from('bancos').select('id').eq('empresa_id', empresaId)
     ]);
 
-    // Saldo bancario total actual (suma del último saldo de cada banco)
+    // Saldo bancario disponible total actual (suma del último saldo disponible de cada banco)
     let saldoInicialHoy = 0;
     if (bancos && bancos.length) {
       const { data: saldos } = await sb.from('saldos_bancarios')
-        .select('banco_id, fecha, saldo')
+        .select('banco_id, fecha, saldo, cheques_no_cobrados')
         .in('banco_id', bancos.map(b => b.id))
         .order('fecha', { ascending: false });
       const vistos = new Set();
       (saldos || []).forEach(s => {
-        if (!vistos.has(s.banco_id)) { vistos.add(s.banco_id); saldoInicialHoy += Number(s.saldo); }
+        if (!vistos.has(s.banco_id)) { vistos.add(s.banco_id); saldoInicialHoy += Number(s.saldo) - Number(s.cheques_no_cobrados || 0); }
       });
     }
 
@@ -407,16 +475,21 @@
       document.getElementById('saldosFecha').value = new Date().toISOString().slice(0, 10);
     }
 
-    // Tabla rápida: un input de saldo por banco
-    let filaHtml = '<thead><tr><th>Cuenta</th><th>Saldo actual</th><th>Nuevo saldo</th></tr></thead><tbody>';
+    // Tabla rápida: inputs de saldo banco + cheques no cobrados por cuenta
+    let filaHtml = '<thead><tr><th>Cuenta</th><th>Último registro</th><th>Saldo Banco</th><th>Cheques no cobrados</th></tr></thead><tbody>';
     for (const b of bancosCache) {
-      const { data: ultimo } = await sb.from('saldos_bancarios').select('saldo, fecha').eq('banco_id', b.id).order('fecha', { ascending: false }).limit(1);
-      const saldoActual = ultimo && ultimo.length ? `${fmt(ultimo[0].saldo)} (${ultimo[0].fecha})` : 'Sin registros';
+      const { data: ultimo } = await sb.from('saldos_bancarios').select('saldo, cheques_no_cobrados, fecha').eq('banco_id', b.id).order('fecha', { ascending: false }).limit(1);
+      let ultimoTexto = 'Sin registros';
+      if (ultimo && ultimo.length) {
+        const disponible = Number(ultimo[0].saldo) - Number(ultimo[0].cheques_no_cobrados || 0);
+        ultimoTexto = `${fmt(disponible)} disponible al ${ultimo[0].fecha}`;
+      }
       filaHtml += `
         <tr>
           <td>${b.nombre}</td>
-          <td>${saldoActual}</td>
-          <td><input type="number" step="1" class="saldoRapidoInput" data-banco="${b.id}" placeholder="Ingresar monto"></td>
+          <td style="font-size:12px; color:#7a8a7a;">${ultimoTexto}</td>
+          <td><input type="number" step="1" class="saldoRapidoInput" data-banco="${b.id}" placeholder="Saldo banco"></td>
+          <td><input type="number" step="1" class="chequesRapidoInput" data-banco="${b.id}" placeholder="0"></td>
         </tr>`;
     }
     filaHtml += '</tbody>';
@@ -440,8 +513,8 @@
           <button class="btn small danger" onclick="borrarBanco('${b.id}')">Eliminar cuenta</button>
         </div>
         <table class="simple">
-          <thead><tr><th>Fecha</th><th>Saldo</th></tr></thead>
-          <tbody>${(saldos || []).map(s => `<tr><td>${s.fecha}</td><td>${fmt(s.saldo)}</td></tr>`).join('') || '<tr><td colspan="2">Sin registros</td></tr>'}</tbody>
+          <thead><tr><th>Fecha</th><th>Saldo Banco</th><th>Cheques no cobrados</th><th>Saldo Disponible</th></tr></thead>
+          <tbody>${(saldos || []).map(s => `<tr><td>${s.fecha}</td><td>${fmt(s.saldo)}</td><td>${fmt(s.cheques_no_cobrados)}</td><td>${fmt(Number(s.saldo) - Number(s.cheques_no_cobrados || 0))}</td></tr>`).join('') || '<tr><td colspan="4">Sin registros</td></tr>'}</tbody>
         </table>
       </div>`;
     }
@@ -452,10 +525,13 @@
     const fecha = document.getElementById('saldosFecha').value;
     if (!fecha) return showMsg('saldosMsg', 'Selecciona una fecha.', false);
 
-    const inputs = [...document.querySelectorAll('.saldoRapidoInput')].filter(i => i.value !== '');
-    if (inputs.length === 0) return showMsg('saldosMsg', 'Ingresa al menos un saldo.', false);
+    const inputsSaldo = [...document.querySelectorAll('.saldoRapidoInput')].filter(i => i.value !== '');
+    if (inputsSaldo.length === 0) return showMsg('saldosMsg', 'Ingresa al menos un saldo.', false);
 
-    const filas = inputs.map(i => ({ banco_id: i.dataset.banco, fecha, saldo: i.value }));
+    const filas = inputsSaldo.map(i => {
+      const chequesInput = document.querySelector(`.chequesRapidoInput[data-banco="${i.dataset.banco}"]`);
+      return { banco_id: i.dataset.banco, fecha, saldo: i.value, cheques_no_cobrados: chequesInput.value || 0 };
+    });
     const { error } = await sb.from('saldos_bancarios').upsert(filas, { onConflict: 'banco_id,fecha' });
     if (error) return showMsg('saldosMsg', 'Error: ' + error.message, false);
 
