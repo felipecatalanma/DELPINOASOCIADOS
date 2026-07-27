@@ -234,7 +234,7 @@
           </div>
           <table id="tablaLineasNueva" style="margin-bottom:10px;"></table>
           <button type="button" class="btn secondary small" id="agregarLineaBtn">+ Agregar línea</button>
-          <p style="font-size:11px; color:#7a8a7a; margin-top:8px;">Obligatorio — el total de las líneas debe calzar con el monto neto (o el total, si no ingresas el neto).</p>
+          <p style="font-size:11px; color:#7a8a7a; margin-top:8px;">Opcional — puedes dejar la factura sin desglosar por categoría/centro de costo si no lo necesitas.</p>
         </div>
 
         <div style="margin-bottom:12px;"><label>Observaciones</label><textarea id="fObs"></textarea></div>
@@ -693,15 +693,7 @@
   document.getElementById('agregarLineaEditBtn').addEventListener('click', () => manejadorLineasEdit.agregar());
 
   function validarLineas(lineas, montoNeto, montoTotal) {
-    if (!lineas.length) return { valido: false, mensaje: 'Debes agregar al menos una línea a la factura (categoría + centro de costo).' };
-    const sinClasificar = lineas.some(l => !l.categoriaId || !l.centroCostoId);
-    if (sinClasificar) return { valido: false, mensaje: 'Todas las líneas deben tener categoría y centro de costo seleccionados.' };
-    const usaNeto = Number(montoNeto) > 0;
-    const objetivo = usaNeto ? Number(montoNeto) : Number(montoTotal);
-    const asignado = lineas.reduce((s, l) => s + (parseFloat(l.monto) || 0), 0);
-    if (Math.abs(asignado - objetivo) > 1) {
-      return { valido: false, mensaje: `El total de las líneas (${fmt(asignado)}) no calza con ${usaNeto ? 'el monto neto' : 'el monto total'} (${fmt(objetivo)}). Ajusta los montos de las líneas.` };
-    }
+    // Validación desactivada por ahora: las líneas (categoría, centro de costo) son opcionales.
     return { valido: true };
   }
 
