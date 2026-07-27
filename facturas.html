@@ -788,15 +788,7 @@
     msgEl.textContent = 'Leyendo PDF...';
 
     try {
-      const buffer = await file.arrayBuffer();
-      const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
-      let textoCompleto = '';
-      for (let i = 1; i <= pdf.numPages; i++) {
-        const page = await pdf.getPage(i);
-        const content = await page.getTextContent();
-        textoCompleto += content.items.map(it => it.str).join(' ') + ' ';
-      }
-
+      const { textoCompleto, filas } = await leerPDF(file);
       const datos = extraerDatosFactura(textoCompleto);
 
       if (datos.folio) document.getElementById('fFolio').value = datos.folio;
@@ -806,10 +798,24 @@
       if (datos.iva != null) document.getElementById('fIva').value = datos.iva;
       if (datos.montoTotal != null) document.getElementById('fMontoTotal').value = datos.montoTotal;
 
-      // Autocompletar una línea con el monto detectado — solo falta elegir categoría y centro de costo
-      const montoLinea = datos.montoNeto ?? datos.montoTotal;
-      if (montoLinea != null) {
-        manejadorLineasNueva.cargar([{ categoriaId: '', centroCostoId: '', descripcion: '', monto: montoLinea }]);
+      // Intentar detectar los productos individuales de la factura (cada uno como su propia línea)
+      const productos = detectarProductos(filas);
+      let avisoProductos = '';
+      if (productos.length) {
+        manejadorLineasNueva.cargar(productos.map(p => ({ categoriaId: '', centroCostoId: '', descripcion: p.descripcion, monto: p.monto })));
+        const sumaProductos = productos.reduce((s, p) => s + p.monto, 0);
+        const objetivo = datos.montoNeto ?? datos.montoTotal;
+        if (objetivo && Math.abs(sumaProductos - objetivo) > Math.max(1, objetivo * 0.02)) {
+          avisoProductos = `⚠️ Se detectaron ${productos.length} producto(s), pero la suma (${fmt(sumaProductos)}) no calza exactamente con el monto de la factura — revísalos.`;
+        } else {
+          avisoProductos = `Se detectaron ${productos.length} producto(s) — asigna categoría y centro de costo a cada uno.`;
+        }
+      } else {
+        const montoLinea = datos.montoNeto ?? datos.montoTotal;
+        if (montoLinea != null) {
+          manejadorLineasNueva.cargar([{ categoriaId: '', centroCostoId: '', descripcion: '', monto: montoLinea }]);
+          avisoProductos = 'No se detectaron productos individuales — se creó 1 línea con el monto total, revisa y ajusta si corresponde.';
+        }
       }
 
       // Detectar RUT del proveedor (el que no coincide con ninguna de tus empresas)
@@ -836,7 +842,7 @@
       }
 
       if (!datos.fechaVencimiento) mensajes.push('No se detectó fecha de vencimiento — complétala manualmente.');
-      if (montoLinea != null) mensajes.push('Se creó 1 línea con el monto detectado — solo falta elegir categoría y centro de costo.');
+      if (avisoProductos) mensajes.push(avisoProductos);
       if (mensajes.length === 0) mensajes.push('Datos extraídos. Revisa los campos antes de guardar.');
 
       msgEl.innerHTML = mensajes.join('<br>');
@@ -847,16 +853,77 @@
   });
 
   // ---------- CARGA MASIVA DE FACTURAS ----------
-  async function extraerTextoPDF(file) {
+  async function leerPDF(file) {
     const buffer = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
-    let texto = '';
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i);
+    let textoCompleto = '';
+    const filas = [];
+
+    for (let p = 1; p <= pdf.numPages; p++) {
+      const page = await pdf.getPage(p);
       const content = await page.getTextContent();
-      texto += content.items.map(it => it.str).join(' ') + ' ';
+      textoCompleto += content.items.map(it => it.str).join(' ') + ' ';
+
+      // Agrupar los items por posición vertical (Y) para reconstruir filas visuales de tablas
+      const grupos = {};
+      content.items.forEach(item => {
+        if (!item.str || !item.str.trim()) return;
+        const y = Math.round(item.transform[5]);
+        const x = item.transform[4];
+        if (!grupos[y]) grupos[y] = [];
+        grupos[y].push({ x, str: item.str });
+      });
+
+      const ys = Object.keys(grupos).map(Number).sort((a, b) => b - a);
+      const ysAgrupados = [];
+      ys.forEach(y => {
+        const existente = ysAgrupados.find(g => Math.abs(g.y - y) <= 2);
+        if (existente) existente.ys.push(y); else ysAgrupados.push({ y, ys: [y] });
+      });
+
+      ysAgrupados.forEach(g => {
+        let items = [];
+        g.ys.forEach(y => items = items.concat(grupos[y]));
+        items.sort((a, b) => a.x - b.x);
+        const texto = items.map(it => it.str).join(' ').replace(/\s+/g, ' ').trim();
+        if (texto) filas.push(texto);
+      });
     }
-    return texto;
+
+    return { textoCompleto, filas };
+  }
+
+  const PALABRAS_EXCLUIDAS_LINEA = ['codigo','descripcion','descripción','cantidad','precio','valor','total','monto neto','i.v.a','iva','impuesto','son:','guia','retirado','entrega','recibido','nombre:','r.u.t','rut:','fecha:','firma','timbre','autorizacion','autorización','condicion de pago','condición de pago','oficina','tipo cambio','vendedor','cod. registro','forma de pago','saldo anterior','razon social','razón social','giro','direccion','dirección','comuna','ciudad','telefono','teléfono','email','sucursal','fono','señores','sres','cliente','orden interna','oc/np','tipo despacho','sii','factura electr','boleta electr','folio'];
+
+  function esLineaExcluida(texto) {
+    const t = texto.toLowerCase();
+    return PALABRAS_EXCLUIDAS_LINEA.some(p => t.includes(p));
+  }
+
+  function detectarProductos(filas) {
+    const productos = [];
+    const patronMonto = /(\d{1,3}(?:\.\d{3})+)\s*$/;
+
+    filas.forEach(fila => {
+      if (esLineaExcluida(fila)) return;
+      const m = fila.match(patronMonto);
+      if (!m) return;
+      const monto = parseInt(m[1].replace(/\./g, ''), 10);
+      if (!monto || monto < 100) return;
+
+      let descripcion = fila.slice(0, m.index).trim();
+      let anterior;
+      do {
+        anterior = descripcion;
+        descripcion = descripcion.replace(/[\d.,]+\s*$/, '').trim();
+      } while (descripcion !== anterior);
+      descripcion = descripcion.replace(/^-?\s*\d*\s*/, '').trim();
+
+      if (descripcion.length < 3) return;
+      productos.push({ descripcion, monto });
+    });
+
+    return productos;
   }
 
   let cargaMasivaDatos = [];
@@ -870,8 +937,8 @@
 
     for (const file of files) {
       try {
-        const texto = await extraerTextoPDF(file);
-        const datos = extraerDatosFactura(texto);
+        const { textoCompleto, filas } = await leerPDF(file);
+        const datos = extraerDatosFactura(textoCompleto);
         const rutProveedor = (datos.ruts || []).find(r => !empresasRuts.find(e => e.normalizado === r.normalizado));
         let proveedorId = '';
         let alerta = '';
@@ -882,8 +949,21 @@
         } else {
           alerta = 'No se detectó RUT de proveedor';
         }
-        const montoLinea = datos.montoNeto ?? datos.montoTotal;
-        const lineasAuto = montoLinea != null ? [{ categoriaId: '', centroCostoId: '', descripcion: '', monto: montoLinea }] : [];
+
+        const productos = detectarProductos(filas);
+        let lineasAuto;
+        if (productos.length) {
+          lineasAuto = productos.map(p => ({ categoriaId: '', centroCostoId: '', descripcion: p.descripcion, monto: p.monto }));
+          const sumaProductos = productos.reduce((s, p) => s + p.monto, 0);
+          const objetivo = datos.montoNeto ?? datos.montoTotal;
+          if (objetivo && Math.abs(sumaProductos - objetivo) > Math.max(1, objetivo * 0.02)) {
+            alerta = (alerta ? alerta + ' — ' : '') + 'Revisa los productos detectados, la suma no calza exactamente con el monto de la factura.';
+          }
+        } else {
+          const montoLinea = datos.montoNeto ?? datos.montoTotal;
+          lineasAuto = montoLinea != null ? [{ categoriaId: '', centroCostoId: '', descripcion: '', monto: montoLinea }] : [];
+        }
+
         cargaMasivaDatos.push({
           file, nombreArchivo: file.name,
           folio: datos.folio || '', proveedorId, categoriaId: '',
