@@ -132,6 +132,7 @@
     <div class="tab" data-panel="facturas">Facturas</div>
     <div class="tab" data-panel="proveedores">Proveedores</div>
     <div class="tab" data-panel="categorias">Categorías</div>
+    <div class="tab" data-panel="centros">Centros de Costo</div>
   </div>
 
   <!-- RESUMEN -->
@@ -177,6 +178,12 @@
       <thead><tr><th>Proveedor</th><th>Total pagado</th></tr></thead>
       <tbody id="tablaPorProveedor"></tbody>
     </table>
+
+    <div class="section-title">Distribución por centro de costo (según líneas asignadas)</div>
+    <table>
+      <thead><tr><th>Centro de costo</th><th>Monto asignado</th></tr></thead>
+      <tbody id="tablaPorCentroCosto"></tbody>
+    </table>
   </div>
 
   <!-- FACTURAS -->
@@ -211,7 +218,7 @@
       <form id="facturaForm">
         <div class="form-grid">
           <div><label>Proveedor</label><select id="fProveedor" required></select></div>
-          <div><label>Categoría</label><select id="fCategoria" required></select></div>
+          <div><label>Categoría general (opcional)</label><select id="fCategoria"></select></div>
           <div><label>Folio</label><input type="text" id="fFolio"></div>
           <div><label>Fecha emisión</label><input type="date" id="fFechaEmision"></div>
           <div><label>Fecha vencimiento</label><input type="date" id="fFechaVenc"></div>
@@ -219,6 +226,17 @@
           <div><label>IVA</label><input type="number" step="1" id="fIva"></div>
           <div><label>Monto total *</label><input type="number" step="1" id="fMontoTotal" required></div>
         </div>
+
+        <div style="margin:16px 0; padding:14px; background:#f8faf8; border:1px dashed #c8d4c8; border-radius:8px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+            <label style="margin:0;">Líneas de la factura (categoría + centro de costo)</label>
+            <span id="lineasResumen" style="font-size:12px; color:#7a8a7a;">Asignado: $0</span>
+          </div>
+          <table id="tablaLineasNueva" style="margin-bottom:10px;"></table>
+          <button type="button" class="btn secondary small" id="agregarLineaBtn">+ Agregar línea</button>
+          <p style="font-size:11px; color:#7a8a7a; margin-top:8px;">Obligatorio — el total de las líneas debe calzar con el monto neto (o el total, si no ingresas el neto).</p>
+        </div>
+
         <div style="margin-bottom:12px;"><label>Observaciones</label><textarea id="fObs"></textarea></div>
         <button type="submit" class="btn">Guardar factura</button>
       </form>
@@ -309,6 +327,24 @@
     </table>
     </div>
 
+  <!-- CENTROS DE COSTO -->
+  <div class="panel" id="panel-centros">
+    <div class="form-box">
+      <div class="section-title" style="margin-top:0;">Nuevo centro de costo</div>
+      <div class="msg" id="centroMsg"></div>
+      <form id="centroForm">
+        <div class="form-grid">
+          <div><label>Nombre *</label><input type="text" id="ceNombre" required placeholder="Ej: Arándanos"></div>
+        </div>
+        <button type="submit" class="btn">Guardar centro de costo</button>
+      </form>
+    </div>
+    <table>
+      <thead><tr><th>Nombre</th><th></th></tr></thead>
+      <tbody id="tablaCentros"></tbody>
+    </table>
+  </div>
+
     </div>
 
     <div class="loading" id="loadingMsg">Cargando...</div>
@@ -353,7 +389,7 @@
       <input type="hidden" id="eId">
       <div class="form-grid">
         <div><label>Proveedor</label><select id="eProveedor" required></select></div>
-        <div><label>Categoría</label><select id="eCategoria" required></select></div>
+        <div><label>Categoría general (opcional)</label><select id="eCategoria"></select></div>
         <div><label>Folio</label><input type="text" id="eFolio"></div>
         <div><label>Fecha emisión</label><input type="date" id="eFechaEmision"></div>
         <div><label>Fecha vencimiento</label><input type="date" id="eFechaVenc"></div>
@@ -361,6 +397,16 @@
         <div><label>IVA</label><input type="number" step="1" id="eIva"></div>
         <div><label>Monto total *</label><input type="number" step="1" id="eMontoTotal" required></div>
       </div>
+
+      <div style="margin:16px 0; padding:14px; background:#f8faf8; border:1px dashed #c8d4c8; border-radius:8px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+          <label style="margin:0;">Líneas de la factura (categoría + centro de costo)</label>
+          <span id="lineasEditResumen" style="font-size:12px; color:#7a8a7a;">Asignado: $0</span>
+        </div>
+        <table id="tablaLineasEdit" style="margin-bottom:10px;"></table>
+        <button type="button" class="btn secondary small" id="agregarLineaEditBtn">+ Agregar línea</button>
+      </div>
+
       <div style="margin-bottom:14px;"><label>Observaciones</label><textarea id="eObs"></textarea></div>
       <div style="display:flex; gap:8px; justify-content:space-between;">
         <button type="button" class="btn danger" id="eliminarFacturaBtn">Eliminar factura</button>
@@ -370,6 +416,25 @@
         </div>
       </div>
     </form>
+  </div>
+</div>
+
+<!-- MODAL LÍNEAS CARGA MASIVA -->
+<div id="lineasMasivoOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); align-items:center; justify-content:center; z-index:100;">
+  <div style="background:white; border-radius:10px; padding:24px; width:100%; max-width:560px; max-height:90vh; overflow-y:auto;">
+    <h3 style="font-size:15px; margin-bottom:4px;">Líneas de la factura</h3>
+    <p style="font-size:12px; color:#7a8a7a; margin-bottom:16px;" id="lineasMasivoArchivo"></p>
+    <div class="msg" id="lineasMasivoMsg"></div>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+      <label style="margin:0;">Categoría + centro de costo</label>
+      <span id="lineasMasivoResumen" style="font-size:12px; color:#7a8a7a;">Asignado: $0</span>
+    </div>
+    <table id="tablaLineasMasivo" style="margin-bottom:10px;"></table>
+    <button type="button" class="btn secondary small" id="agregarLineaMasivoBtn">+ Agregar línea</button>
+    <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px;">
+      <button type="button" class="btn secondary" id="lineasMasivoCancelar">Cancelar</button>
+      <button type="button" class="btn" id="lineasMasivoGuardar">Guardar líneas</button>
+    </div>
   </div>
 </div>
 
@@ -415,7 +480,7 @@
       normalizado: normalizarRut(e.rut), id: e.id, nombre: e.nombre_fantasia || e.razon_social
     }));
 
-    await Promise.all([cargarProveedores(), cargarCategorias()]);
+    await Promise.all([cargarProveedores(), cargarCategorias(), cargarCentros()]);
     await cargarFacturas();
     await cargarResumen();
 
@@ -546,6 +611,100 @@
     cargarCategorias();
   };
 
+  // ---------- CENTROS DE COSTO ----------
+  let centrosCosto = [];
+
+  async function cargarCentros() {
+    const { data } = await sb.from('centros_costo').select('*').order('nombre');
+    centrosCosto = data || [];
+    document.getElementById('tablaCentros').innerHTML = centrosCosto.map(c => `
+      <tr>
+        <td>${c.nombre}</td>
+        <td><button class="btn small danger" onclick="borrarCentro('${c.id}')">Eliminar</button></td>
+      </tr>`).join('') || '<tr><td colspan="2">Sin centros de costo aún</td></tr>';
+  }
+
+  document.getElementById('centroForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const { error } = await sb.from('centros_costo').insert({ nombre: document.getElementById('ceNombre').value });
+    if (error) return showMsg('centroMsg', 'Error: ' + error.message, false);
+    showMsg('centroMsg', 'Centro de costo guardado.', true);
+    e.target.reset();
+    cargarCentros();
+  });
+
+  window.borrarCentro = async (id) => {
+    if (!confirm('¿Eliminar este centro de costo? Las líneas de factura que lo usan quedarán sin centro asignado.')) return;
+    const { error } = await sb.from('centros_costo').delete().eq('id', id);
+    if (error) return alert('No se pudo eliminar: ' + error.message);
+    cargarCentros();
+  };
+
+  // ---------- LÍNEAS DE FACTURA (compartido entre Nueva factura y Editar factura) ----------
+  function crearManejadorLineas(tablaId, resumenId) {
+    const estado = { lineas: [] };
+
+    function render() {
+      const tabla = document.getElementById(tablaId);
+      let html = '<thead><tr><th>Categoría</th><th>Centro de Costo</th><th>Descripción</th><th>Monto</th><th></th></tr></thead><tbody>';
+      estado.lineas.forEach((l, i) => {
+        html += `<tr>
+          <td><select data-i="${i}" data-campo="categoriaId" class="lineaInput-${tablaId}">${opcionesSelect(categorias, 'nombre', l.categoriaId, '-- Categoría --')}</select></td>
+          <td><select data-i="${i}" data-campo="centroCostoId" class="lineaInput-${tablaId}">${opcionesSelect(centrosCosto, 'nombre', l.centroCostoId, '-- Centro de costo --')}</select></td>
+          <td><input type="text" data-i="${i}" data-campo="descripcion" class="lineaInput-${tablaId}" value="${l.descripcion || ''}" style="width:110px;"></td>
+          <td><input type="number" data-i="${i}" data-campo="monto" class="lineaInput-${tablaId}" value="${l.monto || ''}" style="width:90px;"></td>
+          <td><button type="button" class="btn small danger" onclick="window.quitarLinea_${tablaId}(${i})">Quitar</button></td>
+        </tr>`;
+      });
+      html += '</tbody>';
+      tabla.innerHTML = estado.lineas.length ? html : '';
+
+      document.querySelectorAll('.lineaInput-' + tablaId).forEach(input => {
+        input.addEventListener('input', (e) => {
+          estado.lineas[e.target.dataset.i][e.target.dataset.campo] = e.target.value;
+          actualizarResumen();
+        });
+      });
+      actualizarResumen();
+    }
+
+    function actualizarResumen() {
+      const asignado = estado.lineas.reduce((s, l) => s + (parseFloat(l.monto) || 0), 0);
+      document.getElementById(resumenId).textContent = `Asignado: ${fmt(asignado)}`;
+    }
+
+    window['quitarLinea_' + tablaId] = (i) => {
+      estado.lineas.splice(i, 1);
+      render();
+    };
+
+    return {
+      agregar() { estado.lineas.push({ categoriaId: '', centroCostoId: '', descripcion: '', monto: '' }); render(); },
+      cargar(lineas) { estado.lineas = lineas; render(); },
+      obtener() { return estado.lineas.filter(l => l.monto); },
+      limpiar() { estado.lineas = []; render(); }
+    };
+  }
+
+  const manejadorLineasNueva = crearManejadorLineas('tablaLineasNueva', 'lineasResumen');
+  const manejadorLineasEdit = crearManejadorLineas('tablaLineasEdit', 'lineasEditResumen');
+
+  document.getElementById('agregarLineaBtn').addEventListener('click', () => manejadorLineasNueva.agregar());
+  document.getElementById('agregarLineaEditBtn').addEventListener('click', () => manejadorLineasEdit.agregar());
+
+  function validarLineas(lineas, montoNeto, montoTotal) {
+    if (!lineas.length) return { valido: false, mensaje: 'Debes agregar al menos una línea a la factura (categoría + centro de costo).' };
+    const sinClasificar = lineas.some(l => !l.categoriaId || !l.centroCostoId);
+    if (sinClasificar) return { valido: false, mensaje: 'Todas las líneas deben tener categoría y centro de costo seleccionados.' };
+    const usaNeto = Number(montoNeto) > 0;
+    const objetivo = usaNeto ? Number(montoNeto) : Number(montoTotal);
+    const asignado = lineas.reduce((s, l) => s + (parseFloat(l.monto) || 0), 0);
+    if (Math.abs(asignado - objetivo) > 1) {
+      return { valido: false, mensaje: `El total de las líneas (${fmt(asignado)}) no calza con ${usaNeto ? 'el monto neto' : 'el monto total'} (${fmt(objetivo)}). Ajusta los montos de las líneas.` };
+    }
+    return { valido: true };
+  }
+
   // ---------- EXTRACCIÓN DE DATOS DESDE PDF ----------
   pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
@@ -655,6 +814,12 @@
       if (datos.iva != null) document.getElementById('fIva').value = datos.iva;
       if (datos.montoTotal != null) document.getElementById('fMontoTotal').value = datos.montoTotal;
 
+      // Autocompletar una línea con el monto detectado — solo falta elegir categoría y centro de costo
+      const montoLinea = datos.montoNeto ?? datos.montoTotal;
+      if (montoLinea != null) {
+        manejadorLineasNueva.cargar([{ categoriaId: '', centroCostoId: '', descripcion: '', monto: montoLinea }]);
+      }
+
       // Detectar RUT del proveedor (el que no coincide con ninguna de tus empresas)
       const rutProveedor = (datos.ruts || []).find(r => !empresasRuts.find(e => e.normalizado === r.normalizado));
       const rutEmpresaDetectada = (datos.ruts || []).find(r => empresasRuts.find(e => e.normalizado === r.normalizado));
@@ -679,6 +844,7 @@
       }
 
       if (!datos.fechaVencimiento) mensajes.push('No se detectó fecha de vencimiento — complétala manualmente.');
+      if (montoLinea != null) mensajes.push('Se creó 1 línea con el monto detectado — solo falta elegir categoría y centro de costo.');
       if (mensajes.length === 0) mensajes.push('Datos extraídos. Revisa los campos antes de guardar.');
 
       msgEl.innerHTML = mensajes.join('<br>');
@@ -724,15 +890,17 @@
         } else {
           alerta = 'No se detectó RUT de proveedor';
         }
+        const montoLinea = datos.montoNeto ?? datos.montoTotal;
+        const lineasAuto = montoLinea != null ? [{ categoriaId: '', centroCostoId: '', descripcion: '', monto: montoLinea }] : [];
         cargaMasivaDatos.push({
           file, nombreArchivo: file.name,
           folio: datos.folio || '', proveedorId, categoriaId: '',
           fechaEmision: datos.fechaEmision || '', fechaVencimiento: datos.fechaVencimiento || '',
           montoNeto: datos.montoNeto ?? '', iva: datos.iva ?? '', montoTotal: datos.montoTotal ?? '',
-          alerta
+          lineas: lineasAuto, alerta
         });
       } catch (err) {
-        cargaMasivaDatos.push({ file, nombreArchivo: file.name, folio: '', proveedorId: '', categoriaId: '', fechaEmision: '', fechaVencimiento: '', montoNeto: '', iva: '', montoTotal: '', alerta: 'No se pudo leer este PDF' });
+        cargaMasivaDatos.push({ file, nombreArchivo: file.name, folio: '', proveedorId: '', categoriaId: '', fechaEmision: '', fechaVencimiento: '', montoNeto: '', iva: '', montoTotal: '', lineas: [], alerta: 'No se pudo leer este PDF' });
         console.error(err);
       }
     }
@@ -750,8 +918,14 @@
   }
 
   function renderTablaCargaMasiva() {
-    let html = '<thead><tr><th>Archivo</th><th>Proveedor</th><th>Categoría</th><th>Folio</th><th>F. Emisión</th><th>F. Vencimiento</th><th>Monto Total</th><th></th></tr></thead><tbody>';
+    let html = '<thead><tr><th>Archivo</th><th>Proveedor</th><th>Categoría</th><th>Folio</th><th>F. Emisión</th><th>F. Vencimiento</th><th>Monto Total</th><th>Líneas</th><th></th></tr></thead><tbody>';
     cargaMasivaDatos.forEach((f, i) => {
+      const asignado = (f.lineas || []).reduce((s, l) => s + (parseFloat(l.monto) || 0), 0);
+      const faltaClasificar = f.lineas.length && f.lineas.some(l => !l.categoriaId || !l.centroCostoId);
+      let estadoLineas;
+      if (!f.lineas.length) estadoLineas = `<span style="color:#b3261e;">Sin líneas</span>`;
+      else if (faltaClasificar) estadoLineas = `<span style="color:#a56b00;">${f.lineas.length} línea(s) — falta categoría/centro</span>`;
+      else estadoLineas = `<span style="color:#2e7d32;">${f.lineas.length} línea(s) — ${fmt(asignado)}</span>`;
       html += `<tr>
         <td style="font-size:11px; max-width:140px;">${f.nombreArchivo}${f.alerta ? `<br><span style="color:#b3261e;">${f.alerta}</span>` : ''}</td>
         <td><select data-i="${i}" data-campo="proveedorId" class="masivoInput">${opcionesSelect(proveedores, 'razon_social', f.proveedorId, '-- Sin proveedor --')}</select></td>
@@ -760,6 +934,7 @@
         <td><input type="date" data-i="${i}" data-campo="fechaEmision" class="masivoInput" value="${f.fechaEmision}"></td>
         <td><input type="date" data-i="${i}" data-campo="fechaVencimiento" class="masivoInput" value="${f.fechaVencimiento}"></td>
         <td><input type="number" data-i="${i}" data-campo="montoTotal" class="masivoInput" value="${f.montoTotal}" style="width:100px;"></td>
+        <td style="font-size:11px;">${estadoLineas}<br><button type="button" class="btn small secondary" onclick="abrirLineasMasivo(${i})">Editar líneas</button></td>
         <td><button type="button" class="btn small danger" onclick="quitarFilaMasiva(${i})">Quitar</button></td>
       </tr>`;
     });
@@ -781,6 +956,36 @@
     renderTablaCargaMasiva();
   };
 
+  // ---------- MODAL LÍNEAS CARGA MASIVA ----------
+  const manejadorLineasMasivo = crearManejadorLineas('tablaLineasMasivo', 'lineasMasivoResumen');
+  let indiceLineasMasivoActual = null;
+
+  window.abrirLineasMasivo = (i) => {
+    indiceLineasMasivoActual = i;
+    const f = cargaMasivaDatos[i];
+    document.getElementById('lineasMasivoArchivo').textContent = f.nombreArchivo;
+    manejadorLineasMasivo.cargar((f.lineas || []).map(l => ({ ...l })));
+    document.getElementById('lineasMasivoMsg').className = 'msg';
+    document.getElementById('lineasMasivoOverlay').style.display = 'flex';
+  };
+
+  document.getElementById('agregarLineaMasivoBtn').addEventListener('click', () => manejadorLineasMasivo.agregar());
+
+  document.getElementById('lineasMasivoCancelar').addEventListener('click', () => {
+    document.getElementById('lineasMasivoOverlay').style.display = 'none';
+  });
+
+  document.getElementById('lineasMasivoGuardar').addEventListener('click', () => {
+    const f = cargaMasivaDatos[indiceLineasMasivoActual];
+    const lineas = manejadorLineasMasivo.obtener();
+    const validacion = validarLineas(lineas, f.montoNeto, f.montoTotal);
+    if (!validacion.valido) return showMsg('lineasMasivoMsg', validacion.mensaje, false);
+
+    f.lineas = lineas;
+    document.getElementById('lineasMasivoOverlay').style.display = 'none';
+    renderTablaCargaMasiva();
+  });
+
   document.getElementById('cancelarMasivoBtn').addEventListener('click', () => {
     cargaMasivaDatos = [];
     document.getElementById('fArchivosMasivo').value = '';
@@ -791,6 +996,11 @@
   document.getElementById('guardarMasivoBtn').addEventListener('click', async () => {
     const conMonto = cargaMasivaDatos.filter(f => f.montoTotal);
     if (conMonto.length === 0) return showMsg('masivaMsg', 'No hay filas con monto total para guardar.', false);
+
+    const sinLineasValidas = conMonto.filter(f => !validarLineas(f.lineas, f.montoNeto, f.montoTotal).valido);
+    if (sinLineasValidas.length > 0) {
+      return showMsg('masivaMsg', `Corrige las líneas de: ${sinLineasValidas.map(f => f.nombreArchivo).join(', ')} antes de guardar.`, false);
+    }
 
     let guardadas = 0;
     for (const f of cargaMasivaDatos) {
@@ -808,6 +1018,15 @@
       }).select().single();
 
       if (error) { console.error(error); continue; }
+
+      const filasDetalle = f.lineas.map(l => ({
+        factura_id: nuevaFactura.id,
+        categoria_id: l.categoriaId || null,
+        centro_costo_id: l.centroCostoId || null,
+        descripcion: l.descripcion || null,
+        monto: l.monto
+      }));
+      if (filasDetalle.length) await sb.from('factura_detalle').insert(filasDetalle);
 
       const ruta = `${empresaId}/${nuevaFactura.id}_${f.file.name}`;
       const { error: uploadError } = await sb.storage.from('facturas').upload(ruta, f.file);
@@ -895,7 +1114,7 @@
   });
 
   // ---------- EDITAR / ELIMINAR FACTURA ----------
-  window.abrirEditar = (facturaId) => {
+  window.abrirEditar = async (facturaId) => {
     const f = facturasCache.find(x => x.id === facturaId);
     if (!f) return;
     document.getElementById('eId').value = f.id;
@@ -911,6 +1130,12 @@
     document.getElementById('eMontoTotal').value = f.monto_total || '';
     document.getElementById('eObs').value = f.observaciones || '';
     document.getElementById('editMsg').className = 'msg';
+
+    const { data: detalleExistente } = await sb.from('factura_detalle').select('*').eq('factura_id', facturaId);
+    manejadorLineasEdit.cargar((detalleExistente || []).map(d => ({
+      categoriaId: d.categoria_id || '', centroCostoId: d.centro_costo_id || '', descripcion: d.descripcion || '', monto: d.monto
+    })));
+
     document.getElementById('editModalOverlay').style.display = 'flex';
   };
 
@@ -921,6 +1146,11 @@
   document.getElementById('editForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const id = document.getElementById('eId').value;
+
+    const lineasEdit = manejadorLineasEdit.obtener();
+    const validacionEdit = validarLineas(lineasEdit, document.getElementById('eMontoNeto').value, document.getElementById('eMontoTotal').value);
+    if (!validacionEdit.valido) return showMsg('editMsg', validacionEdit.mensaje, false);
+
     const { error } = await sb.from('facturas').update({
       proveedor_id: document.getElementById('eProveedor').value || null,
       categoria_id: document.getElementById('eCategoria').value || null,
@@ -934,6 +1164,22 @@
     }).eq('id', id);
 
     if (error) return showMsg('editMsg', 'Error: ' + error.message, false);
+
+    // Reemplazar las líneas: se borran las anteriores y se insertan las actuales
+    await sb.from('factura_detalle').delete().eq('factura_id', id);
+    const lineas = manejadorLineasEdit.obtener();
+    if (lineas.length) {
+      const filasDetalle = lineas.map(l => ({
+        factura_id: id,
+        categoria_id: l.categoriaId || null,
+        centro_costo_id: l.centroCostoId || null,
+        descripcion: l.descripcion || null,
+        monto: l.monto
+      }));
+      const { error: detalleError } = await sb.from('factura_detalle').insert(filasDetalle);
+      if (detalleError) showMsg('editMsg', 'Factura actualizada, pero hubo un error al guardar las líneas: ' + detalleError.message, false);
+    }
+
     document.getElementById('editModalOverlay').style.display = 'none';
     cargarFacturas();
     cargarResumen();
@@ -951,6 +1197,11 @@
 
   document.getElementById('facturaForm').addEventListener('submit', async (e) => {
     e.preventDefault();
+
+    const lineasNueva = manejadorLineasNueva.obtener();
+    const validacion = validarLineas(lineasNueva, document.getElementById('fMontoNeto').value, document.getElementById('fMontoTotal').value);
+    if (!validacion.valido) return showMsg('facturaMsg', validacion.mensaje, false);
+
     const { data: nuevaFactura, error } = await sb.from('facturas').insert({
       empresa_id: empresaId,
       proveedor_id: document.getElementById('fProveedor').value || null,
@@ -966,6 +1217,19 @@
 
     if (error) return showMsg('facturaMsg', 'Error: ' + error.message, false);
 
+    const lineas = manejadorLineasNueva.obtener();
+    if (lineas.length) {
+      const filasDetalle = lineas.map(l => ({
+        factura_id: nuevaFactura.id,
+        categoria_id: l.categoriaId || null,
+        centro_costo_id: l.centroCostoId || null,
+        descripcion: l.descripcion || null,
+        monto: l.monto
+      }));
+      const { error: detalleError } = await sb.from('factura_detalle').insert(filasDetalle);
+      if (detalleError) showMsg('facturaMsg', 'Factura guardada, pero hubo un error al guardar las líneas: ' + detalleError.message, false);
+    }
+
     if (archivoSeleccionado) {
       const ruta = `${empresaId}/${nuevaFactura.id}_${archivoSeleccionado.name}`;
       const { error: uploadError } = await sb.storage.from('facturas').upload(ruta, archivoSeleccionado);
@@ -979,6 +1243,7 @@
     showMsg('facturaMsg', 'Factura guardada.', true);
     e.target.reset();
     document.getElementById('extraccionMsg').textContent = '';
+    manejadorLineasNueva.limpiar();
     archivoSeleccionado = null;
     cargarFacturas();
     cargarResumen();
@@ -1082,6 +1347,23 @@
       || '<tr><td colspan="5">Sin facturas pagadas aún</td></tr>';
 
     renderEgresosPorMes();
+    cargarPorCentroCosto();
+  }
+
+  async function cargarPorCentroCosto() {
+    const { data: detalle } = await sb.from('factura_detalle')
+      .select('monto, centros_costo(nombre), facturas!inner(empresa_id)')
+      .eq('facturas.empresa_id', empresaId);
+
+    const porCentro = {};
+    (detalle || []).forEach(d => {
+      const nombre = d.centros_costo?.nombre || 'Sin centro de costo';
+      porCentro[nombre] = (porCentro[nombre] || 0) + Number(d.monto);
+    });
+
+    document.getElementById('tablaPorCentroCosto').innerHTML =
+      Object.entries(porCentro).sort((a, b) => b[1] - a[1]).map(([k, v]) => `<tr><td>${k}</td><td>${fmt(v)}</td></tr>`).join('')
+      || '<tr><td colspan="2">Aún no has asignado líneas a tus facturas</td></tr>';
   }
 
   function renderEgresosPorMes() {
