@@ -893,7 +893,7 @@
     return { textoCompleto, filas };
   }
 
-  const PALABRAS_EXCLUIDAS_LINEA = ['codigo','descripcion','descripción','cantidad','precio','valor','total','monto neto','i.v.a','iva','impuesto','son:','guia','retirado','entrega','recibido','nombre:','r.u.t','rut:','fecha:','firma','timbre','autorizacion','autorización','condicion de pago','condición de pago','oficina','tipo cambio','vendedor','cod. registro','forma de pago','saldo anterior','razon social','razón social','giro','direccion','dirección','comuna','ciudad','telefono','teléfono','email','sucursal','fono','señores','sres','cliente','orden interna','oc/np','tipo despacho','sii','factura electr','boleta electr','folio'];
+  const PALABRAS_EXCLUIDAS_LINEA = ['codigo','descripcion','descripción','cantidad','precio','valor','total','monto neto','monto exento','monto afecto','i.v.a','iva','impuesto','son:','guia','retirado','entrega','recibido','nombre:','r.u.t','rut:','fecha:','firma','timbre','autorizacion','autorización','condicion de pago','condición de pago','oficina','tipo cambio','vendedor','cod. registro','forma de pago','saldo anterior','razon social','razón social','giro','direccion','dirección','comuna','ciudad','telefono','teléfono','email','sucursal','fono','señores','sres','cliente','orden interna','oc/np','tipo despacho','sii','factura electr','boleta electr','folio','documento electrónico','documento electronico','verifique documento','forma de pago'];
 
   function esLineaExcluida(texto) {
     const t = texto.toLowerCase();
