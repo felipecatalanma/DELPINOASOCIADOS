@@ -133,6 +133,7 @@
     <div class="tab" data-panel="proveedores">Proveedores</div>
     <div class="tab" data-panel="categorias">Categorías</div>
     <div class="tab" data-panel="centros">Centros de Costo</div>
+    <div class="tab" data-panel="general">Carga General</div>
   </div>
 
   <!-- RESUMEN -->
@@ -345,6 +346,26 @@
     </table>
   </div>
 
+  <!-- CARGA GENERAL (multi-empresa) -->
+  <div class="panel" id="panel-general">
+    <div class="form-box">
+      <div class="section-title" style="margin-top:0;">Carga general de facturas — todas las empresas</div>
+      <div class="msg" id="generalMsg"></div>
+      <p style="font-size:12px; color:#667066; margin-bottom:10px;">Sube facturas de cualquiera de tus 5 empresas de una sola vez. El sistema detecta el RUT del comprador en cada PDF y las clasifica solo — revisa antes de guardar por si alguna necesita corrección manual.</p>
+      <div style="display:flex; gap:10px; align-items:end; flex-wrap:wrap; margin-bottom:14px;">
+        <div style="flex:1; min-width:220px;"><label>PDFs de facturas (cualquier empresa)</label><input type="file" id="fArchivosGeneral" accept="application/pdf" multiple></div>
+        <button type="button" class="btn secondary" id="procesarGeneralBtn">Procesar PDFs</button>
+      </div>
+      <div style="overflow-x:auto;">
+        <table id="tablaCargaGeneral" style="display:none;"></table>
+      </div>
+      <div id="generalAcciones" style="display:none; margin-top:12px; gap:8px;">
+        <button type="button" class="btn" id="guardarGeneralBtn">Guardar todas las facturas</button>
+        <button type="button" class="btn secondary" id="cancelarGeneralBtn">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
     </div>
 
     <div class="loading" id="loadingMsg">Cargando...</div>
@@ -407,6 +428,11 @@
         <button type="button" class="btn secondary small" id="agregarLineaEditBtn">+ Agregar línea</button>
       </div>
 
+      <div style="margin:16px 0; padding:14px; background:#f8faf8; border:1px dashed #c8d4c8; border-radius:8px;">
+        <label style="display:block; margin-bottom:10px;">Pagos registrados</label>
+        <table id="tablaPagosEdit"></table>
+      </div>
+
       <div style="margin-bottom:14px;"><label>Observaciones</label><textarea id="eObs"></textarea></div>
       <div style="display:flex; gap:8px; justify-content:space-between;">
         <button type="button" class="btn danger" id="eliminarFacturaBtn">Eliminar factura</button>
@@ -434,6 +460,25 @@
     <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px;">
       <button type="button" class="btn secondary" id="lineasMasivoCancelar">Cancelar</button>
       <button type="button" class="btn" id="lineasMasivoGuardar">Guardar líneas</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL LÍNEAS CARGA GENERAL -->
+<div id="lineasGeneralOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); align-items:center; justify-content:center; z-index:100;">
+  <div style="background:white; border-radius:10px; padding:24px; width:100%; max-width:560px; max-height:90vh; overflow-y:auto;">
+    <h3 style="font-size:15px; margin-bottom:4px;">Líneas de la factura</h3>
+    <p style="font-size:12px; color:#7a8a7a; margin-bottom:16px;" id="lineasGeneralArchivo"></p>
+    <div class="msg" id="lineasGeneralMsg"></div>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+      <label style="margin:0;">Categoría + centro de costo</label>
+      <span id="lineasGeneralResumen" style="font-size:12px; color:#7a8a7a;">Asignado: $0</span>
+    </div>
+    <table id="tablaLineasGeneral" style="margin-bottom:10px;"></table>
+    <button type="button" class="btn secondary small" id="agregarLineaGeneralBtn">+ Agregar línea</button>
+    <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px;">
+      <button type="button" class="btn secondary" id="lineasGeneralCancelar">Cancelar</button>
+      <button type="button" class="btn" id="lineasGeneralGuardar">Guardar líneas</button>
     </div>
   </div>
 </div>
@@ -480,7 +525,7 @@
       normalizado: normalizarRut(e.rut), id: e.id, nombre: e.nombre_fantasia || e.razon_social
     }));
 
-    await Promise.all([cargarProveedores(), cargarCategorias(), cargarCentros()]);
+    await Promise.all([cargarProveedores(), cargarCategorias(), cargarCentros(), cargarTodasCategorias()]);
     await cargarFacturas();
     await cargarResumen();
 
@@ -640,16 +685,22 @@
     cargarCentros();
   };
 
+  async function cargarTodasCategorias() {
+    const { data } = await sb.from('categorias_egreso').select('id, nombre, empresa_id');
+    categoriasTodas = data || [];
+  }
+
   // ---------- LÍNEAS DE FACTURA (compartido entre Nueva factura y Editar factura) ----------
-  function crearManejadorLineas(tablaId, resumenId) {
+  function crearManejadorLineas(tablaId, resumenId, obtenerCategorias) {
     const estado = { lineas: [] };
+    const getCategorias = obtenerCategorias || (() => categorias);
 
     function render() {
       const tabla = document.getElementById(tablaId);
       let html = '<thead><tr><th>Categoría</th><th>Centro de Costo</th><th>Descripción</th><th>Monto</th><th></th></tr></thead><tbody>';
       estado.lineas.forEach((l, i) => {
         html += `<tr>
-          <td><select data-i="${i}" data-campo="categoriaId" class="lineaInput-${tablaId}">${opcionesSelect(categorias, 'nombre', l.categoriaId, '-- Categoría --')}</select></td>
+          <td><select data-i="${i}" data-campo="categoriaId" class="lineaInput-${tablaId}">${opcionesSelect(getCategorias(), 'nombre', l.categoriaId, '-- Categoría --')}</select></td>
           <td><select data-i="${i}" data-campo="centroCostoId" class="lineaInput-${tablaId}">${opcionesSelect(centrosCosto, 'nombre', l.centroCostoId, '-- Centro de costo --')}</select></td>
           <td><input type="text" data-i="${i}" data-campo="descripcion" class="lineaInput-${tablaId}" value="${l.descripcion || ''}" style="width:110px;"></td>
           <td><input type="number" data-i="${i}" data-campo="monto" class="lineaInput-${tablaId}" value="${l.monto || ''}" style="width:90px;"></td>
@@ -682,7 +733,8 @@
       agregar() { estado.lineas.push({ categoriaId: '', centroCostoId: '', descripcion: '', monto: '' }); render(); },
       cargar(lineas) { estado.lineas = lineas; render(); },
       obtener() { return estado.lineas.filter(l => l.monto); },
-      limpiar() { estado.lineas = []; render(); }
+      limpiar() { estado.lineas = []; render(); },
+      rerender() { render(); }
     };
   }
 
@@ -702,6 +754,7 @@
 
   let archivoSeleccionado = null;
   let empresasRuts = []; // [{ normalizado, id, nombre }]
+  let categoriasTodas = []; // [{ id, nombre, empresa_id }] — todas las empresas, para Carga General
   const FECHA_PATTERN = '(?:\\d{1,2}\\s*/\\s*\\d{1,2}\\s*/\\s*\\d{4}|\\d{1,2}\\s+de\\s+[A-Za-zñÑ]+\\s+del?\\s+\\d{4}|\\d{1,2}\\s+[A-Za-zñÑ]{3,4}\\.?\\s+\\d{4})';
   const MESES = {enero:1,ene:1,febrero:2,feb:2,marzo:3,mar:3,abril:4,abr:4,mayo:5,may:5,junio:6,jun:6,julio:7,jul:7,agosto:8,ago:8,septiembre:9,setiembre:9,sep:9,sept:9,octubre:10,oct:10,noviembre:11,nov:11,diciembre:12,dic:12};
 
@@ -753,7 +806,8 @@
     const resultado = {};
 
     let m = texto.match(/N[°ºo]\s*FACTURA\s*[:.]?\s*([\d.]+)/i);
-    if (!m) m = texto.match(/FACTURA\s+ELECTR[OÓ]NICA[\s\S]{0,15}?N[°ºo]\s*([\d.]+)/i);
+    if (!m) m = texto.match(/FACTURA[\s\S]{0,40}?ELECTR[OÓ]NICA[\s\S]{0,15}?N[°ºo]\s*([\d.]+)/i);
+    if (!m) m = texto.match(/BOLETA[\s\S]{0,40}?ELECTR[OÓ]NICA[\s\S]{0,15}?N[°ºo]\s*([\d.]+)/i);
     resultado.folio = m ? m[1].replace(/\./g, '') : '';
 
     resultado.montoNeto = buscarMonto(texto, ['MONTO\\s*NETO', 'Monto\\s*Neto']);
@@ -799,22 +853,23 @@
       if (datos.montoTotal != null) document.getElementById('fMontoTotal').value = datos.montoTotal;
 
       // Intentar detectar los productos individuales de la factura (cada uno como su propia línea)
-      const productos = detectarProductos(filas);
+      const productosDetectados = detectarProductos(filas);
+      const productos = aplicarBrutoAProductos(productosDetectados, datos.montoNeto, datos.montoTotal);
       let avisoProductos = '';
       if (productos.length) {
         manejadorLineasNueva.cargar(productos.map(p => ({ categoriaId: '', centroCostoId: '', descripcion: p.descripcion, monto: p.monto })));
         const sumaProductos = productos.reduce((s, p) => s + p.monto, 0);
-        const objetivo = datos.montoNeto ?? datos.montoTotal;
+        const objetivo = datos.montoTotal;
         if (objetivo && Math.abs(sumaProductos - objetivo) > Math.max(1, objetivo * 0.02)) {
-          avisoProductos = `⚠️ Se detectaron ${productos.length} producto(s), pero la suma (${fmt(sumaProductos)}) no calza exactamente con el monto de la factura — revísalos.`;
+          avisoProductos = `⚠️ Se detectaron ${productos.length} producto(s), pero la suma (${fmt(sumaProductos)}) no calza exactamente con el monto total de la factura (${fmt(objetivo)}) — revísalos.`;
         } else {
-          avisoProductos = `Se detectaron ${productos.length} producto(s) — asigna categoría y centro de costo a cada uno.`;
+          avisoProductos = `Se detectaron ${productos.length} producto(s) (montos brutos, con IVA) — asigna categoría y centro de costo a cada uno.`;
         }
       } else {
-        const montoLinea = datos.montoNeto ?? datos.montoTotal;
+        const montoLinea = datos.montoTotal;
         if (montoLinea != null) {
           manejadorLineasNueva.cargar([{ categoriaId: '', centroCostoId: '', descripcion: '', monto: montoLinea }]);
-          avisoProductos = 'No se detectaron productos individuales — se creó 1 línea con el monto total, revisa y ajusta si corresponde.';
+          avisoProductos = 'No se detectaron productos individuales — se creó 1 línea con el monto total (bruto), revisa y ajusta si corresponde.';
         }
       }
 
@@ -926,6 +981,19 @@
     return productos;
   }
 
+  // Los montos de la tabla de productos suelen venir en neto (antes de IVA).
+  // Para mantener todo en bruto, se escalan proporcionalmente usando neto/total de la factura.
+  function aplicarBrutoAProductos(productos, montoNeto, montoTotal) {
+    if (!productos.length) return productos;
+    const neto = Number(montoNeto) || 0;
+    const total = Number(montoTotal) || 0;
+    if (neto > 0 && total > neto) {
+      const factor = total / neto;
+      return productos.map(p => ({ ...p, monto: Math.round(p.monto * factor) }));
+    }
+    return productos;
+  }
+
   let cargaMasivaDatos = [];
 
   document.getElementById('procesarMasivoBtn').addEventListener('click', async () => {
@@ -950,17 +1018,18 @@
           alerta = 'No se detectó RUT de proveedor';
         }
 
-        const productos = detectarProductos(filas);
+        const productosDetectados = detectarProductos(filas);
+        const productos = aplicarBrutoAProductos(productosDetectados, datos.montoNeto, datos.montoTotal);
         let lineasAuto;
         if (productos.length) {
           lineasAuto = productos.map(p => ({ categoriaId: '', centroCostoId: '', descripcion: p.descripcion, monto: p.monto }));
           const sumaProductos = productos.reduce((s, p) => s + p.monto, 0);
-          const objetivo = datos.montoNeto ?? datos.montoTotal;
+          const objetivo = datos.montoTotal;
           if (objetivo && Math.abs(sumaProductos - objetivo) > Math.max(1, objetivo * 0.02)) {
-            alerta = (alerta ? alerta + ' — ' : '') + 'Revisa los productos detectados, la suma no calza exactamente con el monto de la factura.';
+            alerta = (alerta ? alerta + ' — ' : '') + 'Revisa los productos detectados, la suma no calza exactamente con el monto total de la factura.';
           }
         } else {
-          const montoLinea = datos.montoNeto ?? datos.montoTotal;
+          const montoLinea = datos.montoTotal;
           lineasAuto = montoLinea != null ? [{ categoriaId: '', centroCostoId: '', descripcion: '', monto: montoLinea }] : [];
         }
 
@@ -1115,6 +1184,203 @@
     cargarResumen();
   });
 
+  // ---------- CARGA GENERAL (multi-empresa, clasificación automática por RUT) ----------
+  let cargaGeneralDatos = [];
+
+  document.getElementById('procesarGeneralBtn').addEventListener('click', async () => {
+    const files = [...document.getElementById('fArchivosGeneral').files];
+    if (files.length === 0) return showMsg('generalMsg', 'Selecciona al menos un PDF.', false);
+
+    showMsg('generalMsg', `Procesando ${files.length} archivo(s)...`, true);
+    cargaGeneralDatos = [];
+
+    for (const file of files) {
+      try {
+        const { textoCompleto, filas } = await leerPDF(file);
+        const datos = extraerDatosFactura(textoCompleto);
+
+        const rutEmpresaDetectada = (datos.ruts || []).find(r => empresasRuts.find(e => e.normalizado === r.normalizado));
+        const rutProveedor = (datos.ruts || []).find(r => !empresasRuts.find(e => e.normalizado === r.normalizado));
+
+        let empresaDetectadaId = '';
+        let alerta = '';
+        if (rutEmpresaDetectada) {
+          const empresaMatch = empresasRuts.find(e => e.normalizado === rutEmpresaDetectada.normalizado);
+          empresaDetectadaId = empresaMatch.id;
+        } else {
+          alerta = 'No se detectó a cuál de tus 5 empresas pertenece — selecciónala manualmente';
+        }
+
+        let proveedorId = '';
+        if (rutProveedor) {
+          const prov = proveedores.find(p => normalizarRut(p.rut) === rutProveedor.normalizado);
+          if (prov) proveedorId = prov.id;
+          else alerta = (alerta ? alerta + ' — ' : '') + `Proveedor no registrado (RUT ${rutProveedor.display})`;
+        }
+
+        const productosDetectados = detectarProductos(filas);
+        const productos = aplicarBrutoAProductos(productosDetectados, datos.montoNeto, datos.montoTotal);
+        let lineasAuto;
+        if (productos.length) {
+          lineasAuto = productos.map(p => ({ categoriaId: '', centroCostoId: '', descripcion: p.descripcion, monto: p.monto }));
+        } else {
+          const montoLinea = datos.montoTotal;
+          lineasAuto = montoLinea != null ? [{ categoriaId: '', centroCostoId: '', descripcion: '', monto: montoLinea }] : [];
+        }
+
+        cargaGeneralDatos.push({
+          file, nombreArchivo: file.name,
+          empresaId: empresaDetectadaId,
+          folio: datos.folio || '', proveedorId, categoriaId: '',
+          fechaEmision: datos.fechaEmision || '', fechaVencimiento: datos.fechaVencimiento || '',
+          montoNeto: datos.montoNeto ?? '', iva: datos.iva ?? '', montoTotal: datos.montoTotal ?? '',
+          lineas: lineasAuto, alerta
+        });
+      } catch (err) {
+        cargaGeneralDatos.push({ file, nombreArchivo: file.name, empresaId: '', folio: '', proveedorId: '', categoriaId: '', fechaEmision: '', fechaVencimiento: '', montoNeto: '', iva: '', montoTotal: '', lineas: [], alerta: 'No se pudo leer este PDF' });
+        console.error(err);
+      }
+    }
+
+    renderTablaCargaGeneral();
+    showMsg('generalMsg', `${cargaGeneralDatos.length} archivo(s) procesado(s). Revisa la empresa asignada a cada uno antes de guardar.`, true);
+  });
+
+  function renderTablaCargaGeneral() {
+    let html = '<thead><tr><th>Archivo</th><th>Empresa</th><th>Proveedor</th><th>Categoría</th><th>Folio</th><th>F. Venc.</th><th>Monto Total</th><th>Líneas</th><th></th></tr></thead><tbody>';
+    cargaGeneralDatos.forEach((f, i) => {
+      const asignado = (f.lineas || []).reduce((s, l) => s + (parseFloat(l.monto) || 0), 0);
+      const faltaClasificar = f.lineas.length && f.lineas.some(l => !l.categoriaId || !l.centroCostoId);
+      let estadoLineas;
+      if (!f.lineas.length) estadoLineas = `<span style="color:#b3261e;">Sin líneas</span>`;
+      else if (faltaClasificar) estadoLineas = `<span style="color:#a56b00;">${f.lineas.length} línea(s) — falta clasificar</span>`;
+      else estadoLineas = `<span style="color:#2e7d32;">${f.lineas.length} línea(s) — ${fmt(asignado)}</span>`;
+
+      const categoriasEmpresa = categoriasTodas.filter(c => c.empresa_id === f.empresaId);
+
+      html += `<tr>
+        <td style="font-size:11px; max-width:130px;">${f.nombreArchivo}${f.alerta ? `<br><span style="color:#b3261e;">${f.alerta}</span>` : ''}</td>
+        <td><select data-i="${i}" data-campo="empresaId" class="generalInput">${opcionesSelect(empresasRuts.map(e => ({ id: e.id, nombre: e.nombre })), 'nombre', f.empresaId, '-- Selecciona empresa --')}</select></td>
+        <td><select data-i="${i}" data-campo="proveedorId" class="generalInput">${opcionesSelect(proveedores, 'razon_social', f.proveedorId, '-- Sin proveedor --')}</select></td>
+        <td><select data-i="${i}" data-campo="categoriaId" class="generalInput">${opcionesSelect(categoriasEmpresa, 'nombre', f.categoriaId, '-- Sin categoría --')}</select></td>
+        <td><input type="text" data-i="${i}" data-campo="folio" class="generalInput" value="${f.folio}" style="width:70px;"></td>
+        <td><input type="date" data-i="${i}" data-campo="fechaVencimiento" class="generalInput" value="${f.fechaVencimiento}"></td>
+        <td><input type="number" data-i="${i}" data-campo="montoTotal" class="generalInput" value="${f.montoTotal}" style="width:90px;"></td>
+        <td style="font-size:11px;">${estadoLineas}<br><button type="button" class="btn small secondary" onclick="abrirLineasGeneral(${i})">Editar líneas</button></td>
+        <td><button type="button" class="btn small danger" onclick="quitarFilaGeneral(${i})">Quitar</button></td>
+      </tr>`;
+    });
+    html += '</tbody>';
+
+    document.getElementById('tablaCargaGeneral').innerHTML = html;
+    document.getElementById('tablaCargaGeneral').style.display = cargaGeneralDatos.length ? 'table' : 'none';
+    document.getElementById('generalAcciones').style.display = cargaGeneralDatos.length ? 'flex' : 'none';
+
+    document.querySelectorAll('.generalInput').forEach(input => {
+      input.addEventListener('change', (e) => {
+        const i = e.target.dataset.i;
+        cargaGeneralDatos[i][e.target.dataset.campo] = e.target.value;
+        if (e.target.dataset.campo === 'empresaId') {
+          cargaGeneralDatos[i].categoriaId = ''; // la categoría anterior puede no existir en la nueva empresa
+          renderTablaCargaGeneral();
+        }
+      });
+    });
+  }
+
+  window.quitarFilaGeneral = (i) => {
+    cargaGeneralDatos.splice(i, 1);
+    renderTablaCargaGeneral();
+  };
+
+  document.getElementById('cancelarGeneralBtn').addEventListener('click', () => {
+    cargaGeneralDatos = [];
+    document.getElementById('fArchivosGeneral').value = '';
+    renderTablaCargaGeneral();
+    document.getElementById('generalMsg').className = 'msg';
+  });
+
+  // ---------- MODAL LÍNEAS CARGA GENERAL ----------
+  let indiceLineasGeneralActual = null;
+  const manejadorLineasGeneral = crearManejadorLineas('tablaLineasGeneral', 'lineasGeneralResumen',
+    () => categoriasTodas.filter(c => c.empresa_id === cargaGeneralDatos[indiceLineasGeneralActual]?.empresaId));
+
+  window.abrirLineasGeneral = (i) => {
+    indiceLineasGeneralActual = i;
+    const f = cargaGeneralDatos[i];
+    if (!f.empresaId) {
+      alert('Primero selecciona a qué empresa pertenece esta factura, para poder elegir sus categorías.');
+      return;
+    }
+    document.getElementById('lineasGeneralArchivo').textContent = f.nombreArchivo;
+    manejadorLineasGeneral.cargar((f.lineas || []).map(l => ({ ...l })));
+    document.getElementById('lineasGeneralMsg').className = 'msg';
+    document.getElementById('lineasGeneralOverlay').style.display = 'flex';
+  };
+
+  document.getElementById('agregarLineaGeneralBtn').addEventListener('click', () => manejadorLineasGeneral.agregar());
+
+  document.getElementById('lineasGeneralCancelar').addEventListener('click', () => {
+    document.getElementById('lineasGeneralOverlay').style.display = 'none';
+  });
+
+  document.getElementById('lineasGeneralGuardar').addEventListener('click', () => {
+    const f = cargaGeneralDatos[indiceLineasGeneralActual];
+    f.lineas = manejadorLineasGeneral.obtener();
+    document.getElementById('lineasGeneralOverlay').style.display = 'none';
+    renderTablaCargaGeneral();
+  });
+
+  document.getElementById('guardarGeneralBtn').addEventListener('click', async () => {
+    const conMonto = cargaGeneralDatos.filter(f => f.montoTotal);
+    if (conMonto.length === 0) return showMsg('generalMsg', 'No hay filas con monto total para guardar.', false);
+
+    const sinEmpresa = conMonto.filter(f => !f.empresaId);
+    if (sinEmpresa.length > 0) {
+      return showMsg('generalMsg', `Selecciona la empresa para: ${sinEmpresa.map(f => f.nombreArchivo).join(', ')} antes de guardar.`, false);
+    }
+
+    let guardadas = 0;
+    for (const f of cargaGeneralDatos) {
+      if (!f.montoTotal || !f.empresaId) continue;
+      const { data: nuevaFactura, error } = await sb.from('facturas').insert({
+        empresa_id: f.empresaId,
+        proveedor_id: f.proveedorId || null,
+        categoria_id: f.categoriaId || null,
+        folio: f.folio,
+        fecha_emision: f.fechaEmision || null,
+        fecha_vencimiento: f.fechaVencimiento || null,
+        monto_neto: f.montoNeto || 0,
+        iva: f.iva || 0,
+        monto_total: f.montoTotal
+      }).select().single();
+
+      if (error) { console.error(error); continue; }
+
+      const filasDetalle = f.lineas.map(l => ({
+        factura_id: nuevaFactura.id,
+        categoria_id: l.categoriaId || null,
+        centro_costo_id: l.centroCostoId || null,
+        descripcion: l.descripcion || null,
+        monto: l.monto
+      }));
+      if (filasDetalle.length) await sb.from('factura_detalle').insert(filasDetalle);
+
+      const ruta = `${f.empresaId}/${nuevaFactura.id}_${f.file.name}`;
+      const { error: uploadError } = await sb.storage.from('facturas').upload(ruta, f.file);
+      if (!uploadError) await sb.from('facturas').update({ archivo_url: ruta }).eq('id', nuevaFactura.id);
+
+      guardadas++;
+    }
+
+    showMsg('generalMsg', `${guardadas} de ${cargaGeneralDatos.length} factura(s) guardada(s), repartidas en sus empresas correspondientes.`, true);
+    cargaGeneralDatos = [];
+    document.getElementById('fArchivosGeneral').value = '';
+    renderTablaCargaGeneral();
+    if (document.getElementById('panel-facturas').classList.contains('active')) cargarFacturas();
+    cargarResumen();
+  });
+
   // ---------- FACTURAS ----------
   document.getElementById('fMontoNeto').addEventListener('input', autocompletarTotal);
   document.getElementById('fIva').addEventListener('input', autocompletarTotal);
@@ -1208,7 +1474,58 @@
       categoriaId: d.categoria_id || '', centroCostoId: d.centro_costo_id || '', descripcion: d.descripcion || '', monto: d.monto
     })));
 
+    await cargarPagosEdit(facturaId);
+
     document.getElementById('editModalOverlay').style.display = 'flex';
+  };
+
+  // ---------- PAGOS (editar/eliminar desde el modal de edición) ----------
+  let pagosEditCache = [];
+
+  async function cargarPagosEdit(facturaId) {
+    const { data: pagos } = await sb.from('pagos_factura').select('*').eq('factura_id', facturaId).order('fecha_pago');
+    pagosEditCache = pagos || [];
+    renderPagosEdit();
+  }
+
+  function renderPagosEdit() {
+    document.getElementById('tablaPagosEdit').innerHTML = pagosEditCache.length ? ('<thead><tr><th>Fecha</th><th>Monto</th><th>Medio</th><th>Referencia</th><th></th></tr></thead><tbody>' +
+      pagosEditCache.map(p => `
+      <tr>
+        <td><input type="date" class="pagoEditInput" data-id="${p.id}" data-campo="fecha_pago" value="${p.fecha_pago}"></td>
+        <td><input type="number" step="1" class="pagoEditInput" data-id="${p.id}" data-campo="monto" value="${p.monto}" style="width:100px;"></td>
+        <td><select class="pagoEditInput" data-id="${p.id}" data-campo="medio_pago">
+              <option value="transferencia" ${p.medio_pago === 'transferencia' ? 'selected' : ''}>Transferencia</option>
+              <option value="cheque" ${p.medio_pago === 'cheque' ? 'selected' : ''}>Cheque</option>
+              <option value="efectivo" ${p.medio_pago === 'efectivo' ? 'selected' : ''}>Efectivo</option>
+            </select></td>
+        <td><input type="text" class="pagoEditInput" data-id="${p.id}" data-campo="referencia" value="${p.referencia || ''}" style="width:80px;"></td>
+        <td class="row-actions">
+          <button type="button" class="btn small secondary" onclick="guardarPagoEdit('${p.id}')">Guardar</button>
+          <button type="button" class="btn small danger" onclick="borrarPagoEdit('${p.id}')">Eliminar</button>
+        </td>
+      </tr>`).join('') + '</tbody>')
+      : '<tbody><tr><td>Sin pagos registrados para esta factura.</td></tr></tbody>';
+  }
+
+  window.guardarPagoEdit = async (id) => {
+    const inputs = document.querySelectorAll(`.pagoEditInput[data-id="${id}"]`);
+    const datos = {};
+    inputs.forEach(i => { datos[i.dataset.campo] = i.value; });
+    const { error } = await sb.from('pagos_factura').update(datos).eq('id', id);
+    if (error) return alert('Error al guardar el pago: ' + error.message);
+    cargarFacturas();
+    cargarResumen();
+  };
+
+  window.borrarPagoEdit = async (id) => {
+    if (!confirm('¿Eliminar este pago? El estado de la factura se recalculará.')) return;
+    const { error } = await sb.from('pagos_factura').delete().eq('id', id);
+    if (error) return alert('No se pudo eliminar: ' + error.message);
+    pagosEditCache = pagosEditCache.filter(p => p.id !== id);
+    renderPagosEdit();
+    cargarFacturas();
+    cargarResumen();
   };
 
   document.getElementById('editCancelar').addEventListener('click', () => {
