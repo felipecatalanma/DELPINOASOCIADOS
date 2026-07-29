@@ -1392,7 +1392,7 @@
 
   async function cargarFacturas() {
     const { data } = await sb.from('facturas')
-      .select('*, proveedores(razon_social), categorias_egreso(nombre), pagos_factura(monto)')
+      .select('*, proveedores(razon_social), categorias_egreso(nombre), pagos_factura(monto, comprobante_url)')
       .eq('empresa_id', empresaId)
       .order('fecha_vencimiento', { ascending: true });
 
@@ -1436,6 +1436,7 @@
         <td class="row-actions">
           <button class="btn small secondary" onclick="abrirEditar('${f.id}')">Editar</button>
           ${f.archivo_url ? `<button class="btn small secondary" onclick="verPdf('${f.archivo_url}')">Ver PDF</button>` : ''}
+          ${(() => { const comp = (f.pagos_factura || []).find(p => p.comprobante_url); return comp ? `<button class="btn small secondary" onclick="verComprobante('${comp.comprobante_url}')">Ver comprobante</button>` : ''; })()}
           ${f.estado !== 'pagada' ? `<button class="btn small secondary" onclick="abrirPago('${f.id}', ${f.saldo})">Registrar pago</button>` : ''}
         </td>
       </tr>`).join('') || '<tr><td colspan="8">Sin facturas para los filtros aplicados</td></tr>';
