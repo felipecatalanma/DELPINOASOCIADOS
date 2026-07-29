@@ -63,12 +63,21 @@
   table { width: 100%; border-collapse: collapse; background: white; border-radius: 10px; overflow: hidden; border: 1px solid #e2e8e2; margin-bottom: 20px; }
   th, td { text-align: left; padding: 9px 12px; font-size: 13px; border-bottom: 1px solid #eef2ee; }
   th { background: #f8faf8; color: #667066; font-weight: 600; }
+  .th-ordenable { cursor: pointer; user-select: none; }
+  .th-ordenable:hover { color: #3d6b3d; }
+  .th-ordenable .flecha { font-size: 10px; margin-left: 3px; opacity: 0.5; }
+  .th-ordenable.activo .flecha { opacity: 1; }
   tr:last-child td { border-bottom: none; }
 
   .badge { padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
   .badge.pendiente { background: #fdf3e0; color: #a56b00; }
   .badge.parcial { background: #e3edfb; color: #1d5bb3; }
   .badge.pagada { background: #e6f4e6; color: #2e7d32; }
+  .badge.anulada { background: #f0f0f0; color: #666; text-decoration: line-through; }
+  .badge-tipo { padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+  .badge-tipo.factura { background: #eaf2ea; color: #3d6b3d; }
+  .badge-tipo.nota_credito { background: #fdecea; color: #b3261e; }
+  .badge-tipo.nota_debito { background: #fdf3e0; color: #a56b00; }
 
   .form-box { background: white; border: 1px solid #e2e8e2; border-radius: 10px; padding: 18px; margin-bottom: 20px; }
   .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 12px; }
@@ -218,6 +227,13 @@
 
       <form id="facturaForm">
         <div class="form-grid">
+          <div><label>Tipo de documento</label>
+            <select id="fTipoDte">
+              <option value="factura">Factura</option>
+              <option value="nota_credito">Nota de Crédito</option>
+              <option value="nota_debito">Nota de Débito</option>
+            </select>
+          </div>
           <div><label>Proveedor</label><select id="fProveedor" required></select></div>
           <div><label>Categoría general (opcional)</label><select id="fCategoria"></select></div>
           <div><label>Folio</label><input type="text" id="fFolio"></div>
@@ -226,6 +242,21 @@
           <div><label>Monto neto</label><input type="number" step="1" id="fMontoNeto"></div>
           <div><label>IVA</label><input type="number" step="1" id="fIva"></div>
           <div><label>Monto total *</label><input type="number" step="1" id="fMontoTotal" required></div>
+        </div>
+
+        <div id="fReferenciaBox" style="display:none; margin-bottom:16px; padding:14px; background:#fdf3e0; border:1px dashed #e0c080; border-radius:8px;">
+          <div class="form-grid" style="margin-bottom:8px;">
+            <div><label>Folio de la factura que afecta</label><input type="text" id="fFolioReferencia"></div>
+            <div><label>Tipo de efecto</label>
+              <select id="fTipoReferencia">
+                <option value="rebaja_parcial">Rebaja parcial</option>
+                <option value="anula_total">Anula la factura completa</option>
+              </select>
+            </div>
+            <div style="display:flex; align-items:end;"><button type="button" class="btn secondary small" id="buscarReferenciaBtn">Buscar y vincular</button></div>
+          </div>
+          <div id="fReferenciaResultado" style="font-size:12px;"></div>
+          <input type="hidden" id="fDocumentoReferenciaId">
         </div>
 
         <div style="margin:16px 0; padding:14px; background:#f8faf8; border:1px dashed #c8d4c8; border-radius:8px;">
@@ -253,6 +284,7 @@
             <option value="pendiente">Pendiente</option>
             <option value="parcial">Parcial</option>
             <option value="pagada">Pagada</option>
+            <option value="anulada">Anulada</option>
             <option value="vencida">Vencida</option>
           </select>
         </div>
@@ -266,7 +298,17 @@
 
     <table>
       <thead>
-        <tr><th>Folio</th><th>Proveedor</th><th>Categoría</th><th>Vencimiento</th><th>Total</th><th>Saldo</th><th>Estado</th><th></th></tr>
+        <tr>
+          <th>Tipo</th><th>Folio</th>
+          <th class="th-ordenable" data-campo="proveedor">Proveedor</th>
+          <th class="th-ordenable" data-campo="categoria">Categoría</th>
+          <th class="th-ordenable" data-campo="fecha_emision">Emisión</th>
+          <th class="th-ordenable" data-campo="fecha_vencimiento">Vencimiento</th>
+          <th class="th-ordenable" data-campo="monto_total">Total</th>
+          <th class="th-ordenable" data-campo="saldo">Saldo</th>
+          <th class="th-ordenable" data-campo="estadoMostrado">Estado</th>
+          <th></th>
+        </tr>
       </thead>
       <tbody id="tablaFacturas"></tbody>
     </table>
@@ -409,6 +451,13 @@
     <form id="editForm">
       <input type="hidden" id="eId">
       <div class="form-grid">
+        <div><label>Tipo de documento</label>
+          <select id="eTipoDte">
+            <option value="factura">Factura</option>
+            <option value="nota_credito">Nota de Crédito</option>
+            <option value="nota_debito">Nota de Débito</option>
+          </select>
+        </div>
         <div><label>Proveedor</label><select id="eProveedor" required></select></div>
         <div><label>Categoría general (opcional)</label><select id="eCategoria"></select></div>
         <div><label>Folio</label><input type="text" id="eFolio"></div>
@@ -417,6 +466,21 @@
         <div><label>Monto neto</label><input type="number" step="1" id="eMontoNeto"></div>
         <div><label>IVA</label><input type="number" step="1" id="eIva"></div>
         <div><label>Monto total *</label><input type="number" step="1" id="eMontoTotal" required></div>
+      </div>
+
+      <div id="eReferenciaBox" style="display:none; margin-bottom:16px; padding:14px; background:#fdf3e0; border:1px dashed #e0c080; border-radius:8px;">
+        <div class="form-grid" style="margin-bottom:8px;">
+          <div><label>Folio de la factura que afecta</label><input type="text" id="eFolioReferencia"></div>
+          <div><label>Tipo de efecto</label>
+            <select id="eTipoReferencia">
+              <option value="rebaja_parcial">Rebaja parcial</option>
+              <option value="anula_total">Anula la factura completa</option>
+            </select>
+          </div>
+          <div style="display:flex; align-items:end;"><button type="button" class="btn secondary small" id="buscarReferenciaEditBtn">Buscar y vincular</button></div>
+        </div>
+        <div id="eReferenciaResultado" style="font-size:12px;"></div>
+        <input type="hidden" id="eDocumentoReferenciaId">
       </div>
 
       <div style="margin:16px 0; padding:14px; background:#f8faf8; border:1px dashed #c8d4c8; border-radius:8px;">
@@ -805,10 +869,24 @@
     const texto = textoOriginal.replace(/\s+/g, ' ');
     const resultado = {};
 
+    // Tipo de documento
+    if (/NOTA\s+DE\s+CR[EÉ]DITO/i.test(texto)) resultado.tipoDte = 'nota_credito';
+    else if (/NOTA\s+DE\s+D[EÉ]BITO/i.test(texto)) resultado.tipoDte = 'nota_debito';
+    else resultado.tipoDte = 'factura';
+
     let m = texto.match(/N[°ºo]\s*FACTURA\s*[:.]?\s*([\d.]+)/i);
     if (!m) m = texto.match(/FACTURA[\s\S]{0,40}?ELECTR[OÓ]NICA[\s\S]{0,15}?N[°ºo]\s*([\d.]+)/i);
     if (!m) m = texto.match(/BOLETA[\s\S]{0,40}?ELECTR[OÓ]NICA[\s\S]{0,15}?N[°ºo]\s*([\d.]+)/i);
+    if (!m) m = texto.match(/NOTA\s+DE\s+CR[EÉ]DITO[\s\S]{0,40}?ELECTR[OÓ]NICA[\s\S]{0,15}?N[°ºo]\s*([\d.]+)/i);
+    if (!m) m = texto.match(/NOTA\s+DE\s+D[EÉ]BITO[\s\S]{0,40}?ELECTR[OÓ]NICA[\s\S]{0,15}?N[°ºo]\s*([\d.]+)/i);
     resultado.folio = m ? m[1].replace(/\./g, '') : '';
+
+    // Documento de referencia (para notas de crédito/débito): folio de la factura que afectan y el motivo
+    const refMatch = texto.match(/Fact\.?\s*Electr[oó]nica\s*N[°ºo]\s*([\d]+)/i);
+    resultado.folioReferencia = refMatch ? refMatch[1] : '';
+    if (/ANULA\s+DOCUMENTO/i.test(texto)) resultado.tipoReferencia = 'anula_total';
+    else if (resultado.folioReferencia) resultado.tipoReferencia = 'rebaja_parcial';
+    else resultado.tipoReferencia = '';
 
     resultado.montoNeto = buscarMonto(texto, ['MONTO\\s*NETO', 'Monto\\s*Neto']);
     resultado.iva = buscarMonto(texto, ['I\\.?V\\.?A\\.?']);
@@ -844,6 +922,13 @@
     try {
       const { textoCompleto, filas } = await leerPDF(file);
       const datos = extraerDatosFactura(textoCompleto);
+
+      document.getElementById('fTipoDte').value = datos.tipoDte;
+      document.getElementById('fReferenciaBox').style.display = datos.tipoDte === 'factura' ? 'none' : 'block';
+      if (datos.folioReferencia) document.getElementById('fFolioReferencia').value = datos.folioReferencia;
+      if (datos.tipoReferencia) document.getElementById('fTipoReferencia').value = datos.tipoReferencia;
+      document.getElementById('fDocumentoReferenciaId').value = '';
+      document.getElementById('fReferenciaResultado').innerHTML = '';
 
       if (datos.folio) document.getElementById('fFolio').value = datos.folio;
       if (datos.fechaEmision) document.getElementById('fFechaEmision').value = datos.fechaEmision;
@@ -898,6 +983,10 @@
 
       if (!datos.fechaVencimiento) mensajes.push('No se detectó fecha de vencimiento — complétala manualmente.');
       if (avisoProductos) mensajes.push(avisoProductos);
+      if (datos.tipoDte !== 'factura' && datos.folioReferencia) {
+        mensajes.push(`Documento detectado: ${datos.tipoDte === 'nota_credito' ? 'Nota de Crédito' : 'Nota de Débito'}, que afecta la factura folio ${datos.folioReferencia}${datos.tipoReferencia === 'anula_total' ? ' (la anula completa)' : ' (rebaja parcial)'}.`);
+        document.getElementById('buscarReferenciaBtn').click();
+      }
       if (mensajes.length === 0) mensajes.push('Datos extraídos. Revisa los campos antes de guardar.');
 
       msgEl.innerHTML = mensajes.join('<br>');
@@ -1018,6 +1107,24 @@
           alerta = 'No se detectó RUT de proveedor';
         }
 
+        let documentoReferenciaId = '';
+        if (datos.tipoDte !== 'factura') {
+          const nombreTipo = datos.tipoDte === 'nota_credito' ? 'Nota de Crédito' : 'Nota de Débito';
+          if (datos.folioReferencia) {
+            let queryRef = sb.from('facturas').select('id').eq('folio', datos.folioReferencia).eq('empresa_id', empresaId).eq('tipo_dte', 'factura');
+            if (proveedorId) queryRef = queryRef.eq('proveedor_id', proveedorId);
+            const { data: refData } = await queryRef;
+            if (refData && refData.length === 1) {
+              documentoReferenciaId = refData[0].id;
+              alerta = (alerta ? alerta + ' — ' : '') + `${nombreTipo} vinculada automáticamente al folio ${datos.folioReferencia}.`;
+            } else {
+              alerta = (alerta ? alerta + ' — ' : '') + `${nombreTipo}: no se encontró/ambiguó la factura folio ${datos.folioReferencia} — vincúlala luego desde "Editar".`;
+            }
+          } else {
+            alerta = (alerta ? alerta + ' — ' : '') + `${nombreTipo} detectada, pero no se identificó a qué factura afecta — vincúlala desde "Editar".`;
+          }
+        }
+
         const productosDetectados = detectarProductos(filas);
         const productos = aplicarBrutoAProductos(productosDetectados, datos.montoNeto, datos.montoTotal);
         let lineasAuto;
@@ -1035,13 +1142,14 @@
 
         cargaMasivaDatos.push({
           file, nombreArchivo: file.name,
+          tipoDte: datos.tipoDte, documentoReferenciaId, tipoReferencia: datos.tipoReferencia || 'rebaja_parcial',
           folio: datos.folio || '', proveedorId, categoriaId: '',
           fechaEmision: datos.fechaEmision || '', fechaVencimiento: datos.fechaVencimiento || '',
           montoNeto: datos.montoNeto ?? '', iva: datos.iva ?? '', montoTotal: datos.montoTotal ?? '',
           lineas: lineasAuto, alerta
         });
       } catch (err) {
-        cargaMasivaDatos.push({ file, nombreArchivo: file.name, folio: '', proveedorId: '', categoriaId: '', fechaEmision: '', fechaVencimiento: '', montoNeto: '', iva: '', montoTotal: '', lineas: [], alerta: 'No se pudo leer este PDF' });
+        cargaMasivaDatos.push({ file, nombreArchivo: file.name, tipoDte: 'factura', documentoReferenciaId: '', tipoReferencia: '', folio: '', proveedorId: '', categoriaId: '', fechaEmision: '', fechaVencimiento: '', montoNeto: '', iva: '', montoTotal: '', lineas: [], alerta: 'No se pudo leer este PDF' });
         console.error(err);
       }
     }
@@ -1148,6 +1256,9 @@
       if (!f.montoTotal) continue;
       const { data: nuevaFactura, error } = await sb.from('facturas').insert({
         empresa_id: empresaId,
+        tipo_dte: f.tipoDte || 'factura',
+        documento_referencia_id: f.documentoReferenciaId || null,
+        tipo_referencia: (f.tipoDte && f.tipoDte !== 'factura') ? f.tipoReferencia : null,
         proveedor_id: f.proveedorId || null,
         categoria_id: f.categoriaId || null,
         folio: f.folio,
@@ -1383,6 +1494,32 @@
 
   // ---------- FACTURAS ----------
   document.getElementById('fMontoNeto').addEventListener('input', autocompletarTotal);
+
+  document.getElementById('fTipoDte').addEventListener('change', (e) => {
+    document.getElementById('fReferenciaBox').style.display = e.target.value === 'factura' ? 'none' : 'block';
+  });
+
+  document.getElementById('buscarReferenciaBtn').addEventListener('click', async () => {
+    const folio = document.getElementById('fFolioReferencia').value.trim();
+    const provId = document.getElementById('fProveedor').value;
+    const resultadoEl = document.getElementById('fReferenciaResultado');
+    if (!folio) { resultadoEl.innerHTML = '<span style="color:#b3261e;">Ingresa el folio a buscar.</span>'; return; }
+
+    let query = sb.from('facturas').select('id, folio, monto_total, proveedores(razon_social)').eq('folio', folio).eq('empresa_id', empresaId).eq('tipo_dte', 'factura');
+    if (provId) query = query.eq('proveedor_id', provId);
+    const { data } = await query;
+
+    if (!data || data.length === 0) {
+      document.getElementById('fDocumentoReferenciaId').value = '';
+      resultadoEl.innerHTML = '<span style="color:#b3261e;">No se encontró ninguna factura con ese folio en esta empresa. Cárgala primero, o revisa el número.</span>';
+    } else if (data.length > 1) {
+      document.getElementById('fDocumentoReferenciaId').value = '';
+      resultadoEl.innerHTML = '<span style="color:#a56b00;">Hay más de una factura con ese folio — especifica el proveedor para desambiguar.</span>';
+    } else {
+      document.getElementById('fDocumentoReferenciaId').value = data[0].id;
+      resultadoEl.innerHTML = `<span style="color:#2e7d32;">✓ Vinculada a: ${data[0].proveedores?.razon_social || '-'} — folio ${data[0].folio} — ${fmt(data[0].monto_total)}</span>`;
+    }
+  });
   document.getElementById('fIva').addEventListener('input', autocompletarTotal);
   function autocompletarTotal() {
     const neto = parseFloat(document.getElementById('fMontoNeto').value) || 0;
@@ -1400,6 +1537,22 @@
     renderFacturas();
   }
 
+  function calcularAjustesNotas(facturas) {
+    const ajustes = {}; // facturaId (original) -> { anula: bool, netoAjuste: number }
+    facturas.forEach(f => {
+      if (!f.tipo_dte || f.tipo_dte === 'factura' || !f.documento_referencia_id) return;
+      const id = f.documento_referencia_id;
+      if (!ajustes[id]) ajustes[id] = { anula: false, netoAjuste: 0 };
+      if (f.tipo_dte === 'nota_credito') {
+        ajustes[id].netoAjuste -= Number(f.monto_total);
+        if (f.tipo_referencia === 'anula_total') ajustes[id].anula = true;
+      } else if (f.tipo_dte === 'nota_debito') {
+        ajustes[id].netoAjuste += Number(f.monto_total);
+      }
+    });
+    return ajustes;
+  }
+
   function renderFacturas() {
     const hoy = new Date().toISOString().slice(0, 10);
     const provFiltro = document.getElementById('filtroProveedor').value;
@@ -1409,38 +1562,93 @@
     const montoMin = document.getElementById('filtroMontoMin').value;
     const montoMax = document.getElementById('filtroMontoMax').value;
 
+    const ajustesNotas = calcularAjustesNotas(facturasCache);
+
     let facturas = facturasCache.map(f => {
+      const tipoDte = f.tipo_dte || 'factura';
+      if (tipoDte !== 'factura') {
+        // Las notas de crédito/débito no tienen saldo/estado propio de pago
+        return { ...f, saldo: 0, vencida: false, estadoMostrado: tipoDte === 'nota_credito' ? 'Nota de Crédito' : 'Nota de Débito', esNota: true };
+      }
       const pagado = (f.pagos_factura || []).reduce((s, p) => s + Number(p.monto), 0);
-      const saldo = Number(f.monto_total) - pagado;
-      const vencida = f.estado !== 'pagada' && f.fecha_vencimiento && f.fecha_vencimiento < hoy;
-      return { ...f, saldo, vencida };
+      const ajuste = ajustesNotas[f.id] || { anula: false, netoAjuste: 0 };
+      let saldo = Number(f.monto_total) + ajuste.netoAjuste - pagado;
+      let estadoMostrado = f.estado;
+      if (ajuste.anula) { estadoMostrado = 'anulada'; saldo = 0; }
+      else if (saldo <= 0) estadoMostrado = 'pagada';
+      const vencida = estadoMostrado !== 'pagada' && estadoMostrado !== 'anulada' && f.fecha_vencimiento && f.fecha_vencimiento < hoy;
+      return { ...f, saldo, vencida, estadoMostrado, esNota: false };
     });
 
     if (provFiltro) facturas = facturas.filter(f => f.proveedor_id === provFiltro);
     if (estadoFiltro === 'vencida') facturas = facturas.filter(f => f.vencida);
-    else if (estadoFiltro) facturas = facturas.filter(f => f.estado === estadoFiltro);
+    else if (estadoFiltro) facturas = facturas.filter(f => f.estadoMostrado === estadoFiltro);
     if (desde) facturas = facturas.filter(f => f.fecha_vencimiento && f.fecha_vencimiento >= desde);
     if (hasta) facturas = facturas.filter(f => f.fecha_vencimiento && f.fecha_vencimiento <= hasta);
     if (montoMin) facturas = facturas.filter(f => Number(f.monto_total) >= Number(montoMin));
     if (montoMax) facturas = facturas.filter(f => Number(f.monto_total) <= Number(montoMax));
 
+    if (ordenFacturas.campo) {
+      const { campo, direccion } = ordenFacturas;
+      facturas.sort((a, b) => {
+        let va, vb;
+        if (campo === 'proveedor') { va = a.proveedores?.razon_social || ''; vb = b.proveedores?.razon_social || ''; }
+        else if (campo === 'categoria') { va = a.categorias_egreso?.nombre || ''; vb = b.categorias_egreso?.nombre || ''; }
+        else { va = a[campo]; vb = b[campo]; }
+
+        if (['monto_total', 'saldo'].includes(campo)) { va = Number(va) || 0; vb = Number(vb) || 0; }
+        else { va = (va || '').toString().toLowerCase(); vb = (vb || '').toString().toLowerCase(); }
+
+        if (va < vb) return direccion === 'asc' ? -1 : 1;
+        if (va > vb) return direccion === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
+
+    document.querySelectorAll('.th-ordenable').forEach(th => {
+      th.classList.toggle('activo', th.dataset.campo === ordenFacturas.campo);
+      const flechaExistente = th.querySelector('.flecha');
+      if (flechaExistente) flechaExistente.remove();
+      const flecha = document.createElement('span');
+      flecha.className = 'flecha';
+      flecha.textContent = th.dataset.campo === ordenFacturas.campo ? (ordenFacturas.direccion === 'asc' ? '▲' : '▼') : '▲▼';
+      th.appendChild(flecha);
+    });
+
+    const nombresTipo = { factura: 'Factura', nota_credito: 'N. Crédito', nota_debito: 'N. Débito' };
+
     document.getElementById('tablaFacturas').innerHTML = facturas.map(f => `
       <tr>
+        <td><span class="badge-tipo ${f.tipo_dte || 'factura'}">${nombresTipo[f.tipo_dte || 'factura']}</span></td>
         <td>${f.folio || '-'}</td>
         <td>${f.proveedores?.razon_social || '-'}</td>
         <td>${f.categorias_egreso?.nombre || '-'}</td>
+        <td>${f.fecha_emision || '-'}</td>
         <td style="${f.vencida ? 'color:#b3261e;font-weight:600;' : ''}">${f.fecha_vencimiento || '-'}</td>
         <td>${fmt(f.monto_total)}</td>
-        <td>${fmt(f.saldo)}</td>
-        <td><span class="badge ${f.estado}">${f.estado}</span></td>
+        <td>${f.esNota ? '-' : fmt(f.saldo)}</td>
+        <td>${f.esNota ? '-' : `<span class="badge ${f.estadoMostrado}">${f.estadoMostrado}</span>`}</td>
         <td class="row-actions">
           <button class="btn small secondary" onclick="abrirEditar('${f.id}')">Editar</button>
           ${f.archivo_url ? `<button class="btn small secondary" onclick="verPdf('${f.archivo_url}')">Ver PDF</button>` : ''}
           ${(() => { const comp = (f.pagos_factura || []).find(p => p.comprobante_url); return comp ? `<button class="btn small secondary" onclick="verComprobante('${comp.comprobante_url}')">Ver comprobante</button>` : ''; })()}
-          ${f.estado !== 'pagada' ? `<button class="btn small secondary" onclick="abrirPago('${f.id}', ${f.saldo})">Registrar pago</button>` : ''}
+          ${(!f.esNota && f.estadoMostrado !== 'pagada' && f.estadoMostrado !== 'anulada') ? `<button class="btn small secondary" onclick="abrirPago('${f.id}', ${f.saldo})">Registrar pago</button>` : ''}
         </td>
-      </tr>`).join('') || '<tr><td colspan="8">Sin facturas para los filtros aplicados</td></tr>';
+      </tr>`).join('') || '<tr><td colspan="10">Sin facturas para los filtros aplicados</td></tr>';
   }
+
+  let ordenFacturas = { campo: null, direccion: 'asc' };
+  document.querySelectorAll('.th-ordenable').forEach(th => {
+    th.addEventListener('click', () => {
+      const campo = th.dataset.campo;
+      if (ordenFacturas.campo === campo) {
+        ordenFacturas.direccion = ordenFacturas.direccion === 'asc' ? 'desc' : 'asc';
+      } else {
+        ordenFacturas = { campo, direccion: 'asc' };
+      }
+      renderFacturas();
+    });
+  });
 
   ['filtroProveedor', 'filtroEstado', 'filtroFechaDesde', 'filtroFechaHasta', 'filtroMontoMin', 'filtroMontoMax'].forEach(id => {
     document.getElementById(id).addEventListener('input', renderFacturas);
@@ -1457,6 +1665,19 @@
     const f = facturasCache.find(x => x.id === facturaId);
     if (!f) return;
     document.getElementById('eId').value = f.id;
+    document.getElementById('eTipoDte').value = f.tipo_dte || 'factura';
+    document.getElementById('eReferenciaBox').style.display = (f.tipo_dte && f.tipo_dte !== 'factura') ? 'block' : 'none';
+    document.getElementById('eDocumentoReferenciaId').value = f.documento_referencia_id || '';
+    document.getElementById('eTipoReferencia').value = f.tipo_referencia || 'rebaja_parcial';
+    document.getElementById('eReferenciaResultado').innerHTML = '';
+    if (f.documento_referencia_id) {
+      const facturaRef = facturasCache.find(x => x.id === f.documento_referencia_id);
+      document.getElementById('eFolioReferencia').value = facturaRef ? facturaRef.folio : '';
+      if (facturaRef) document.getElementById('eReferenciaResultado').innerHTML = `<span style="color:#2e7d32;">✓ Vinculada a: ${facturaRef.proveedores?.razon_social || '-'} — folio ${facturaRef.folio} — ${fmt(facturaRef.monto_total)}</span>`;
+    } else {
+      document.getElementById('eFolioReferencia').value = '';
+    }
+
     document.getElementById('eProveedor').innerHTML = document.getElementById('fProveedor').innerHTML;
     document.getElementById('eCategoria').innerHTML = document.getElementById('fCategoria').innerHTML;
     document.getElementById('eProveedor').value = f.proveedor_id || '';
@@ -1479,6 +1700,32 @@
 
     document.getElementById('editModalOverlay').style.display = 'flex';
   };
+
+  document.getElementById('eTipoDte').addEventListener('change', (e) => {
+    document.getElementById('eReferenciaBox').style.display = e.target.value === 'factura' ? 'none' : 'block';
+  });
+
+  document.getElementById('buscarReferenciaEditBtn').addEventListener('click', async () => {
+    const folio = document.getElementById('eFolioReferencia').value.trim();
+    const provId = document.getElementById('eProveedor').value;
+    const resultadoEl = document.getElementById('eReferenciaResultado');
+    if (!folio) { resultadoEl.innerHTML = '<span style="color:#b3261e;">Ingresa el folio a buscar.</span>'; return; }
+
+    let query = sb.from('facturas').select('id, folio, monto_total, proveedores(razon_social)').eq('folio', folio).eq('empresa_id', empresaId).eq('tipo_dte', 'factura');
+    if (provId) query = query.eq('proveedor_id', provId);
+    const { data } = await query;
+
+    if (!data || data.length === 0) {
+      document.getElementById('eDocumentoReferenciaId').value = '';
+      resultadoEl.innerHTML = '<span style="color:#b3261e;">No se encontró ninguna factura con ese folio en esta empresa.</span>';
+    } else if (data.length > 1) {
+      document.getElementById('eDocumentoReferenciaId').value = '';
+      resultadoEl.innerHTML = '<span style="color:#a56b00;">Hay más de una factura con ese folio — especifica el proveedor para desambiguar.</span>';
+    } else {
+      document.getElementById('eDocumentoReferenciaId').value = data[0].id;
+      resultadoEl.innerHTML = `<span style="color:#2e7d32;">✓ Vinculada a: ${data[0].proveedores?.razon_social || '-'} — folio ${data[0].folio} — ${fmt(data[0].monto_total)}</span>`;
+    }
+  });
 
   // ---------- PAGOS (editar/eliminar desde el modal de edición) ----------
   let pagosEditCache = [];
@@ -1543,6 +1790,9 @@
     if (!validacionEdit.valido) return showMsg('editMsg', validacionEdit.mensaje, false);
 
     const { error } = await sb.from('facturas').update({
+      tipo_dte: document.getElementById('eTipoDte').value,
+      documento_referencia_id: document.getElementById('eDocumentoReferenciaId').value || null,
+      tipo_referencia: document.getElementById('eTipoDte').value !== 'factura' ? document.getElementById('eTipoReferencia').value : null,
       proveedor_id: document.getElementById('eProveedor').value || null,
       categoria_id: document.getElementById('eCategoria').value || null,
       folio: document.getElementById('eFolio').value,
@@ -1595,6 +1845,9 @@
 
     const { data: nuevaFactura, error } = await sb.from('facturas').insert({
       empresa_id: empresaId,
+      tipo_dte: document.getElementById('fTipoDte').value,
+      documento_referencia_id: document.getElementById('fDocumentoReferenciaId').value || null,
+      tipo_referencia: document.getElementById('fTipoDte').value !== 'factura' ? document.getElementById('fTipoReferencia').value : null,
       proveedor_id: document.getElementById('fProveedor').value || null,
       categoria_id: document.getElementById('fCategoria').value || null,
       folio: document.getElementById('fFolio').value,
@@ -1633,6 +1886,8 @@
 
     showMsg('facturaMsg', 'Factura guardada.', true);
     e.target.reset();
+    document.getElementById('fReferenciaBox').style.display = 'none';
+    document.getElementById('fReferenciaResultado').innerHTML = '';
     document.getElementById('extraccionMsg').textContent = '';
     manejadorLineasNueva.limpiar();
     archivoSeleccionado = null;
@@ -1708,17 +1963,21 @@
     const hoyStr = new Date().toISOString().slice(0, 10);
     let pendiente = 0, vencidas = 0, activas = 0;
     const listaPorPagar = [], listaVencidas = [], listaPagadas = [];
+    const ajustesNotas = calcularAjustesNotas(resumenFacturasCache);
 
-    resumenFacturasCache.forEach(f => {
+    resumenFacturasCache.filter(f => (f.tipo_dte || 'factura') === 'factura').forEach(f => {
       const pagado = (f.pagos_factura || []).reduce((s, p) => s + Number(p.monto), 0);
-      const saldo = Number(f.monto_total) - pagado;
-      const esVencida = f.estado !== 'pagada' && f.fecha_vencimiento && f.fecha_vencimiento < hoyStr;
+      const ajuste = ajustesNotas[f.id] || { anula: false, netoAjuste: 0 };
+      let saldo = Number(f.monto_total) + ajuste.netoAjuste - pagado;
+      const anulada = ajuste.anula;
+      const pagadaOAnulada = anulada || saldo <= 0;
+      const esVencida = !pagadaOAnulada && f.fecha_vencimiento && f.fecha_vencimiento < hoyStr;
 
-      if (f.estado !== 'pagada') {
+      if (!pagadaOAnulada) {
         pendiente += saldo; activas++;
         const fila = { folio: f.folio, prov: f.proveedores?.razon_social || '-', cat: f.categorias_egreso?.nombre || '-', venc: f.fecha_vencimiento || '-', saldo };
         if (esVencida) { vencidas++; listaVencidas.push(fila); } else { listaPorPagar.push(fila); }
-      } else {
+      } else if (!anulada) {
         const ultimaFechaPago = (f.pagos_factura || []).map(p => p.fecha_pago).filter(Boolean).sort().slice(-1)[0];
         listaPagadas.push({ folio: f.folio, prov: f.proveedores?.razon_social || '-', cat: f.categorias_egreso?.nombre || '-', total: f.monto_total, fecha: ultimaFechaPago || '-' });
       }
