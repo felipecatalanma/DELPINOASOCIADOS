@@ -1501,6 +1501,7 @@
             </select></td>
         <td><input type="text" class="pagoEditInput" data-id="${p.id}" data-campo="referencia" value="${p.referencia || ''}" style="width:80px;"></td>
         <td class="row-actions">
+          ${p.comprobante_url ? `<button type="button" class="btn small secondary" onclick="verComprobante('${p.comprobante_url}')">Ver comprobante</button>` : ''}
           <button type="button" class="btn small secondary" onclick="guardarPagoEdit('${p.id}')">Guardar</button>
           <button type="button" class="btn small danger" onclick="borrarPagoEdit('${p.id}')">Eliminar</button>
         </td>
@@ -1641,6 +1642,12 @@
   window.verPdf = async (ruta) => {
     const { data, error } = await sb.storage.from('facturas').createSignedUrl(ruta, 300);
     if (error) return alert('No se pudo abrir el PDF: ' + error.message);
+    window.open(data.signedUrl, '_blank');
+  };
+
+  window.verComprobante = async (ruta) => {
+    const { data, error } = await sb.storage.from('comprobantes').createSignedUrl(ruta, 300);
+    if (error) return alert('No se pudo abrir el comprobante: ' + error.message);
     window.open(data.signedUrl, '_blank');
   };
 
