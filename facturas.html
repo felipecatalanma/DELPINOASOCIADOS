@@ -1067,7 +1067,14 @@
       productos.push({ descripcion, monto });
     });
 
-    return productos;
+    // Deduplicar: algunos PDF traen la factura repetida en 2 páginas (Original + copia "Cedible")
+    const vistos = new Set();
+    return productos.filter(p => {
+      const clave = p.descripcion + '|' + p.monto;
+      if (vistos.has(clave)) return false;
+      vistos.add(clave);
+      return true;
+    });
   }
 
   // Los montos de la tabla de productos suelen venir en neto (antes de IVA).
